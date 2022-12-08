@@ -68,7 +68,7 @@ def train(model, criterion, optimizer, loader, epoch):
 def main(): 
 
   loader = load_data()
-  model = BackBoneEncoder(models.__dict__[cfg.backbone_arch], cfg.backbone_dim, cfg.backbone_pred_dim).to(device)
+  model = BackBoneEncoder(models.__dict__[cfg.backbone_arch], cfg.backbone_dim, cfg.backbone_pred_dim, in_pretrain=True).to(device)
 
   criterion = nn.CosineSimilarity(dim = 1).to("cuda")
   optimizer = optim.SGD(model.parameters(), lr=cfg.lr, momentum = cfg.momentum, weight_decay=cfg.weight_decay)

@@ -3,18 +3,28 @@ from easydict import EasyDict as edict
 __C = edict()
 cfg = __C
 
-
+# Percentage of whole dataset to label at the beginning
 __C.initial_budget = .01
+
+# Percentage of whole dataset to label before stop labeling
 __C.final_budget = .1
 
-__C.num_epochs = 70
+# How many sample to add evry cycle
+__C.b = 10
 
-__C.batch_size = 100
+__C.stage2_bs = 100
+__C.stage2_lr = 30
+__C.stage2_momentum = .9
+__C.stage2_weigth_decay = 0
+__C.stage2_num_epochs = 100
 
-__C.lr = 0.05
-__C.weight_decay = 0.0001
-__C.momentum = 0.9
 
+
+__C.stage3_bs = 100
+
+
+
+# Do not change as this are related to the backbone training
 __C.backbone_arch = "resnet18"
 __C.backbone_dim = 2048
 __C.backbone_pred_dim = 512
