@@ -15,14 +15,14 @@ class BackBoneEncoder(nn.Module) :
 
     self.encoder = base_encoder(num_classes = dim, zero_init_residual=True) 
 
-    last_dim = self.encoder.fc.in_features
+    self.last_dim = self.encoder.fc.in_features
 
     self.encoder.fc = nn.Sequential(
-        nn.Linear(last_dim, last_dim, bias = False), 
-        nn.BatchNorm1d(last_dim),
+        nn.Linear(self.last_dim, self.last_dim, bias = False), 
+        nn.BatchNorm1d(self.last_dim),
         nn.Mish(inplace = True),
-        nn.Linear(last_dim, last_dim, bias = False), 
-        nn.BatchNorm1d(last_dim),
+        nn.Linear(self.last_dim, self.last_dim, bias = False), 
+        nn.BatchNorm1d(self.last_dim),
         nn.Mish(inplace=True),
         self.encoder.fc,
         nn.BatchNorm1d(dim, affine=False)
@@ -46,3 +46,5 @@ class BackBoneEncoder(nn.Module) :
 
     # Detach as the stop gradient operation
     return p1, p2, z1.detach(), z2.detach()
+  
+   
