@@ -12,15 +12,18 @@ __C.final_budget = .1
 # How many sample to add evry cycle
 __C.b = 10
 
+# Stage2 training parameters
 __C.stage2_bs = 100
 __C.stage2_lr = 30
+__C.stage2_num_workers = 1
 __C.stage2_momentum = .9
 __C.stage2_weigth_decay = 0
 __C.stage2_num_epochs = 100
 
 
-
+#Stage3 training parameters
 __C.stage3_bs = 100
+__C.stage3_num_workers = 1
 
 
 

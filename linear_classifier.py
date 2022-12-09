@@ -7,33 +7,15 @@ import torchvision.models as models
 import numpy as np
 
 from torch.utils.data import DataLoader
+from torchvision import transforms as T
 
 from models import backbone 
 from utils.lcls_cfg import cfg
+from ActiveWrapper import CIFAR10ActiveWrapper
 
 
 
-def get_initial_subset(initial_budget : float, ds_size : int, seed = 0) -> tuple[list[int], map[int, float]] :
-    np.random.seed(seed)
-    expected_size = int(ds_size * initial_budget)
-    if expected_size >= ds_size : 
-        raise ValueError("Initial Budget Too big")
-    
-    index_map = {k : False for k in range(expected_size)}
-    stage2_index = list()
-    stage3_index = list()
 
-    while len(stage2_index) != expected_size:  
-        pick = np.random.randint(0, ds_size, 1 )
-        if not index_map[pick] : 
-            stage2_index.append(pick)
-            index_map[pick] = True
-    
-    for k, v in index_map.items() : 
-        if not v :
-            stage3_index.append(k)
-        
-    return (stage2_index, stage3_index, index_map)
 
 
 def load_pretrained_backbone(num_classes : int) -> nn.Module: 
@@ -84,34 +66,28 @@ def query_oracle(stage2_data, stage3_data, index_map) :
 
 def main() : 
 
+    transforms = T.Compose([
+        T.ToTensor()
+    ])
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    whole_data = datasets.CIFAR10(root="data", train=True, download=True)
-    stage2_indexes, stage3_indexes, index_map = get_initial_subset(cfg.initial_budget, len(whole_data))
-
-    # Labelled
-    stage2_data = torch.utils.data.Subset(whole_data, stage2_indexes)
-
-    # Non-Labelled
-    stage3_data = torch.utils.data.Subset(whole_data, stage3_indexes)
-
-    # Labelled | We use the whole evaluation set to measure the classification performances. 
+    cifar10 = datasets.CIFAR10(root="data", train=True, download=False)
     eval_data = datasets.CIFAR10(root="data", train=False, download=True)
 
-    # Backbone + Classification Head | Weight frozen on all except last layer
+
+    train_data = CIFAR10ActiveWrapper(cifar10, cfg.initial_budget, cfg.final_budget, transform=transforms)
+
+
+    stage2_Loader = train_data.get_stage2_loader(cfg.stage2_bs, cfg.stage2_num_workers)
+    eval_loader = DataLoader(eval_data, batch_size=cfg.stage2_bs, shuffle=True)
+
+    stage3_Loader = train_data.get_stage3_loader(cfg.stage3_bs, cfg.dstage3_num_workers)
+
     model = load_pretrained_backbone(10)
     model = model.to(device)
 
-    stage2_train_loader = DataLoader(stage2_data, batch_size=cfg.stage2_bs, shuffle=True)
-    stage2_eval_loader = DataLoader()
     stage2_optimizer = optim.SGD(model.parameters(), cfg.stage2_lr, cfg.stage2_momentum, weight_decay=cfg.stage2_weigth_decay) 
     stage2_criterion = nn.CrossEntropyLoss()
-
-    stage3_loader = DataLoader(stage3_data, batch_size=cfg.stage3_bs, shuffle=True)
-    eval_loader = DataLoader(eval_data, batch_size=cfg.stage2_bs, shuffle=True)
-
-
-
 
     
     
