@@ -10,7 +10,7 @@ __C.initial_budget = .01
 __C.final_budget = .1
 
 # How many sample to add evry cycle
-__C.b = 10
+__C.b = 50
 
 # Stage2 training parameters
 __C.stage2_bs = 100

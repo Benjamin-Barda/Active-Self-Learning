@@ -73,10 +73,10 @@ class CIFAR10ActiveWrapper(Dataset) :
     
 
     def get_stage2_loader(self, batch_size, num_workers = 1) : 
-        return DataLoader(self.stage2_data, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+        return DataLoader(self, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 
     def get_stage3_loader(self, batch_size, num_workers = 1) : 
-        return DataLoader(self.stage3_data, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+        return DataLoader(self, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 
     def getLoaders(self, stage2_batch_size, stage3_batch_size, stage2_num_workers = 1, stage3_num_workers = 1): 
         return self.get_stage2_loader(stage2_batch_size, stage2_num_workers), self.get_stage3_loader(stage3_batch_size, stage3_num_workers)
@@ -88,16 +88,10 @@ class CIFAR10ActiveWrapper(Dataset) :
         return self.current_stage == self.STAGE3
     
     def goto_stage2(self) -> None: 
-        if self.is_stage2() : 
-            print("[ ! ] Already in Stage2")
-        else : 
-            self.current_stage = self.STAGE2
+        self.current_stage = self.STAGE2
     
     def goto_stage3(self) -> None : 
-        if self.is_stage3():
-            print("[ ! ] Already in stage3")
-        else: 
-            self.current_stage = self.STAGE3 
+        self.current_stage = self.STAGE3 
     
     
     def __len__(self) : 
