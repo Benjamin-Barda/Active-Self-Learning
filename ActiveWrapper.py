@@ -3,7 +3,13 @@ import torchvision.datasets as datasets
 from torch.utils.data import Dataset, Subset, IterableDataset, DataLoader
 from torchvision import transforms
 
+from utils.lcls_cfg import cfg as cfg2
+
+import numpy as np
+
 import random
+
+
 
 class CIFAR10ActiveWrapper(Dataset) : 
 
@@ -46,7 +52,7 @@ class CIFAR10ActiveWrapper(Dataset) :
         self.stage2_indexes = list()
         self.stage3_indexes = list() 
 
-        if total_budget >= 1 : 
+        if total_budget > 1 : 
             raise ValueError(f"Error in budget processing: Expected in range [0, 1] but got {total_budget}")
         if total_budget <= initial_budget: 
             raise ValueError(f"Error in budget processing; intial budget [{initial_budget}] greater than total budget [{total_budget}]")
@@ -93,6 +99,30 @@ class CIFAR10ActiveWrapper(Dataset) :
     def goto_stage3(self) -> None : 
         self.current_stage = self.STAGE3 
     
+
+    def query_orcale(self, indices : torch.LongTensor) : 
+        # indices are the top scoring indices tens
+        indices = indices.numpy()
+        
+        mask = np.isin(self.stage3_indexes, indices, invert=True)
+        inverted_mask = np.invert(mask)
+
+        s2idx = np.asarray(self.stage3_indexes)
+        s3idx = np.asarray(self.stage3_indexes)
+
+        s2idx = s2idx[inverted_mask]
+        s3idx = s3idx[mask]
+
+        self.stage2_indexes += s2idx.tolist()
+        self.stage3_indexes = s3idx.tolist()
+        
+        self.stage2_data = Subset(self.dataset, self.stage2_indexes)
+        self.stage3_data = Subset(self.dataset, self.stage3_indexes)
+
+        self.spent_budget += cfg2.b
+
+
+
     
     def __len__(self) : 
         if self.current_stage == self.STAGE2: 
@@ -106,9 +136,9 @@ class CIFAR10ActiveWrapper(Dataset) :
             images = self.transform(images)
             return images, labels
         else: 
-            images, _ = self.stage3_data[index]
+            images, labels  = self.stage3_data[index]
             images = self.transform(images)
-            return images
+            return images, labels
 
 
 

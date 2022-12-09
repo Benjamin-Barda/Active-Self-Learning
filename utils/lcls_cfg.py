@@ -4,13 +4,13 @@ __C = edict()
 cfg = __C
 
 # Percentage of whole dataset to label at the beginning
-__C.initial_budget = .01
+__C.initial_budget = .1
 
 # Percentage of whole dataset to label before stop labeling
-__C.final_budget = .1
+__C.final_budget = 0.5
 
 # How many sample to add evry cycle
-__C.b = 50
+__C.b = .004
 
 # Stage2 training parameters
 __C.stage2_bs = 100

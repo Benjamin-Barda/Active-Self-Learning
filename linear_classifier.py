@@ -6,7 +6,7 @@ import torchvision.models as models
 
 import numpy as np
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision import transforms as T
 
 from models import backbone 
@@ -14,6 +14,7 @@ from utils.lcls_cfg import cfg
 from ActiveWrapper import CIFAR10ActiveWrapper
 
 import warnings
+from utils.schedulers import cosine_decay_scheduler
 
 warnings.filterwarnings("ignore")
 
@@ -30,11 +31,14 @@ def load_pretrained_backbone(num_classes : int) -> nn.Module:
             param.requires_grad = False
     
     model.encoder.fc = nn.Sequential(
-        nn.Linear(model.last_dim, model.last_dim), 
+        nn.Linear(model.last_dim, model.last_dim * 2), 
+        nn.BatchNorm1d(model.last_dim * 2),
+        nn.ReLU(inplace=True), 
+        nn.Linear(model.last_dim * 2, model.last_dim), 
         nn.BatchNorm1d(model.last_dim),
-        nn.Mish(inplace=True), 
+        nn.ReLU(inplace=True), 
         nn.Linear(model.last_dim, num_classes), 
-        nn.BatchNorm1d(num_classes),
+        nn.BatchNorm1d(num_classes, affine=False),
         nn.Softmax(dim = 1)
     )
 
@@ -46,6 +50,7 @@ def entropy_score(preds) :
     return  - np.sum(preds * np.log2(preds), axis = 1)
 
 
+
 def main() : 
 
     transforms = T.Compose([
@@ -55,6 +60,11 @@ def main() :
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cifar10 = datasets.CIFAR10(root="data", train=True, download=False)
     eval_data = datasets.CIFAR10(root="data", train=False, download=True, transform=transforms)
+
+    b_step = int(cfg.b * len(cifar10))
+
+    # eval_indexes = np.random.randint(0, len(eval_data), 5000)
+    # eval_data = Subset(eval_data, eval_indexes)
 
 
     train_data = CIFAR10ActiveWrapper(cifar10, cfg.initial_budget, cfg.final_budget, cfg.b, transform=transforms)
@@ -70,14 +80,19 @@ def main() :
     stage2_optimizer = optim.SGD(model.parameters(), cfg.stage2_lr, cfg.stage2_momentum, weight_decay=cfg.stage2_weigth_decay) 
     stage2_criterion = nn.CrossEntropyLoss()
 
-    model.train()
 
 
     # Stage2 Training
     for epoch in range(cfg.stage2_num_epochs):
-        
+
+        model.train()
         train_data.goto_stage2()
         loader = DataLoader(train_data, batch_size=cfg.stage2_bs, num_workers=cfg.stage2_num_workers, shuffle=True)
+        
+        print("\n")
+        print(f"Current budget spent: {(train_data.spent_budget * 100):.2f}% ")
+        print(f"Labelled: {len(train_data)}")
+
 
         running_loss = 0.0
 
@@ -102,7 +117,6 @@ def main() :
 
         with torch.no_grad(): 
             model.eval()
-            eval_loss = .0
             correct = 0
             for images, labels in eval_loader : 
 
@@ -119,30 +133,34 @@ def main() :
 
         
             print(f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {correct / len(eval_data)}")
-        
-            train_data.goto_stage3()
-            loader = DataLoader(train_data, cfg.stage3_bs, cfg.stage3_num_workers)
 
-            history = list()
+            if epoch % 1 == 0 : 
 
-            # Stage3
-            print(f"Epoch {epoch + 1} : Entering Stage3")
-            for i, images in enumerate(loader): 
-                
-                images = images.to(device)
-                preds = model.forward(images)
-                score = entropy_score(preds.cpu().numpy()).tolist()
-                history.append(score)
+                train_data.goto_stage3()
+                loader = DataLoader(train_data, cfg.stage3_bs, cfg.stage3_num_workers)
 
-                print(f"progress: {i / len(loader) :.2f} ", end = "\r")
-            
-            _, indices = torch.sort(torch.FloatTensor(history))
-            print(indices[:cfg.b])
+                history = list()
 
-    print("\n") 
+                # Stage3
+                print(f"Epoch {epoch + 1} : Entering Stage3")
+                for i, (images, _) in enumerate(loader): 
+                    
+                    images = images.to(device)
+                    preds = model.forward(images)
+                    score = entropy_score(preds.cpu().numpy()).tolist()
 
-    
+                    history += score
+
+                    print(f"progress: {i / len(loader) :.2f} ", end = "\r")
+                print("")
+                _, indices = torch.sort(torch.FloatTensor(history), descending=True)
+
+                train_data.goto_stage3()
+            # Dataset still in stage3 mode
+                train_data.query_orcale(indices[:b_step])
+                cosine_decay_scheduler(stage2_optimizer, .05, epoch, cfg.stage2_num_epochs)
     
 if __name__ == "__main__" : 
     main()
+
 
