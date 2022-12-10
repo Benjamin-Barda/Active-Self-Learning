@@ -69,15 +69,18 @@ def main():
 
   loader = load_data()
   model = BackBoneEncoder(models.__dict__[cfg.backbone_arch], cfg.backbone_dim, cfg.backbone_pred_dim, in_pretrain=True).to(device)
+  # check_point = torch.load("pretrained_weights/backbone_resnet18_70_sgd_cs_V0.pt")
+  # model.load_state_dict(check_point)
 
   criterion = nn.CosineSimilarity(dim = 1).to("cuda")
   optimizer = optim.SGD(model.parameters(), lr=cfg.lr, momentum = cfg.momentum, weight_decay=cfg.weight_decay)
 
-  for epoch in cfg.num_epochs:
+  for epoch in range(cfg.num_epochs):
+    print(f"Epoch {epoch}")
     train(model, criterion, optimizer, loader, epoch)
     cosine_decay_scheduler(optimizer, .05, epoch, cfg.num_epochs )
   
-  torch.save(model.state_dict(), "resnet18_70_V0.pt")
+  torch.save(model.state_dict(), "resnet18_140_V0.pt")
 
 if __name__ == "__main__" :
   main()
