@@ -1,0 +1,20 @@
+{
+    "model": {
+        "architecture": "resnet18",
+        "encoder_dim": 2048,
+        "pred_dim": 512
+    },
+    "optimizer": {
+        "lr": 0.05,
+        "weight_decay": 0.0001,
+        "momentum": 0.9
+    },
+    "trainer": {
+        "batch_size": 100,
+        "max_epochs": 800,
+        "current_epoch": 0,
+        "save_step": 20
+    },
+    "checkpoint": false,
+    "path_to_checkpoint": "checkpoint/resnet18_800_sgd_V0.pt"
+}

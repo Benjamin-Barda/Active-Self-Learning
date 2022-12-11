@@ -3,8 +3,9 @@ from easydict import EasyDict as edict
 __C = edict()
 cfg = __C
 
-__C.current_epoch = 70
-__C.num_epochs = 140
+
+__C.current_epoch = 0
+__C.num_epochs = 800
 
 __C.batch_size = 100
 
@@ -16,3 +17,5 @@ __C.backbone_arch = "resnet18"
 __C.backbone_dim = 2048
 __C.backbone_pred_dim = 512
 
+
+__C.path_to_checkpoint = "checkpoint/"

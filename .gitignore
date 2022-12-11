@@ -132,3 +132,5 @@ dmypy.json
 data/
 pretrained_weights/
 old/
+
+*.private.*
