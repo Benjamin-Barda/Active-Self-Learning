@@ -1,0 +1,25 @@
+{
+    "model" : {
+        "architecture" : "resnet18", 
+        "pretrained"    : false, 
+        "encoder_dim" : 2048, 
+        "pred_dim": 512
+    },
+
+    "optimizer" : {
+        "lr" : 0.05, 
+        "weight_decay" : 0.0001, 
+        "momentum" : 0.9
+    },
+
+    "train" : { 
+        "max_epochs" : 800, 
+        "current_epoch" : 0, 
+        "session_step" : 50
+    },
+
+    "checkpoint" : {
+        "path" : "", 
+        "set"  : false
+    }
+}
