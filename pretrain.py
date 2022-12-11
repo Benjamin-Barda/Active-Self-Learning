@@ -9,14 +9,21 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
 from models.backbone import BackBoneEncoder
-from utils.backbone_cfg import cfg
+# from utils.backbone_cfg import cfg
 from utils.schedulers import cosine_decay_scheduler
 from utils.meters import AverageMeter
+
+import json
+from easydict import EasyDict as edict
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"[ + ] Device set to: {device}")
 
-def load_data() -> DataLoader: 
+
+
+
+
+def load_data(cfg) -> DataLoader: 
 
   augmentation = [
       transforms.RandomResizedCrop(28, scale=(.2, 1)),
@@ -43,7 +50,7 @@ def load_data() -> DataLoader:
   return loader
 
 
-def train(model, criterion, optimizer, loader, epoch):
+def train(model, criterion, optimizer, loader, epoch, cfg):
   losses = AverageMeter("Loss",  ":.4f") 
 
   for _, (images, _) in enumerate(loader):
@@ -67,17 +74,20 @@ def train(model, criterion, optimizer, loader, epoch):
 
 def main(): 
 
-  loader = load_data()
-  model = BackBoneEncoder(models.__dict__[cfg.backbone_arch], cfg.backbone_dim, cfg.backbone_pred_dim, in_pretrain=True).to(device)
-  # check_point = torch.load("pretrained_weights/backbone_resnet18_70_sgd_cs_V0.pt")
-  # model.load_state_dict(check_point)
+  with open()
+  
+  if cfg.checkpoint.path == "" : 
+    loader = load_data(cfg)
+    model = BackBoneEncoder(models.__dict__[cfg.model.architechture], cfg.model.encoder_dim, cfg.model.pred_dim, in_pretrain=True).to(device)
+    # check_point = torch.load("pretrained_weights/backbone_resnet18_70_sgd_cs_V0.pt")
+    # model.load_state_dict(check_point)
 
-  criterion = nn.CosineSimilarity(dim = 1).to("cuda")
-  optimizer = optim.SGD(model.parameters(), lr=cfg.lr, momentum = cfg.momentum, weight_decay=cfg.weight_decay)
+    criterion = nn.CosineSimilarity(dim = 1).to("cuda")
+    optimizer = optim.SGD(model.parameters(), lr=cfg.optimizer.lr, momentum = cfg.optimizer.momentum, weight_decay=cfg.optimizer.weight_decay)
 
-  for epoch in range(cfg.num_epochs):
+  for epoch in range(cfg.):
     print(f"Epoch {epoch}")
-    train(model, criterion, optimizer, loader, epoch)
+    train(model, criterion, optimizer, loader, epoch, cfg)
     cosine_decay_scheduler(optimizer, .05, epoch, cfg.num_epochs )
   
   torch.save(model.state_dict(), "resnet18_140_V0.pt")
