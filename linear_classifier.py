@@ -13,6 +13,7 @@ from models import backbone
 from utils.lcls_cfg import cfg
 from ActiveWrapper import CIFAR10ActiveWrapper
 
+
 import warnings
 from utils.schedulers import cosine_decay_scheduler
 
@@ -20,10 +21,13 @@ warnings.filterwarnings("ignore")
 
 
 def load_pretrained_backbone(num_classes : int) -> nn.Module: 
-    check_point = torch.load("pretrained_weights/backbone_resnet18_70_sgd_cs_V0.pt")
+
+    checkpoint = torch.load("checkpoint/resnet18_250_sgd_V0.pt")
+    model_state = checkpoint["model"]
+
     model = backbone.BackBoneEncoder(models.__dict__["resnet18"], 2048, 512, in_pretrain=False)
 
-    model.load_state_dict(check_point)
+    model.load_state_dict(model_state)
     
     # Freezing the weigths for all the model except the last one
     for name, param in model.named_parameters(): 
@@ -39,15 +43,18 @@ def load_pretrained_backbone(num_classes : int) -> nn.Module:
         nn.ReLU(inplace=True), 
         nn.Linear(model.last_dim, num_classes), 
         nn.BatchNorm1d(num_classes, affine=False),
-        nn.Softmax(dim = 1)
     )
 
     return model
 
 
 def entropy_score(preds) : 
+    #preds (bs, 10)
+    preds = nn.functional.softmax(preds, dim=1)
+    return - torch.sum(preds * torch.log2(preds), dim=1)
 
-    return  - np.sum(preds * np.log2(preds), axis = 1)
+    # preds  = (preds.T /  np.sum(np.exp(preds), axis = 1)).T #Softmax
+    # return  - np.sum(preds * np.log2(preds), axis = 1)
 
 
 
@@ -134,7 +141,7 @@ def main() :
         
             print(f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {correct / len(eval_data)}")
 
-            if epoch % 1 == 0 : 
+            if epoch % 3 == 0 : 
 
                 train_data.goto_stage3()
                 loader = DataLoader(train_data, cfg.stage3_bs, cfg.stage3_num_workers)
@@ -147,7 +154,7 @@ def main() :
                     
                     images = images.to(device)
                     preds = model.forward(images)
-                    score = entropy_score(preds.cpu().numpy()).tolist()
+                    score = entropy_score(preds.cpu()).tolist()
 
                     history += score
 

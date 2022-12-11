@@ -103,20 +103,19 @@ def main():
     cosine_decay_scheduler(optimizer, .05, epoch, num_epochs )
     
     
-    if epoch % save_step == save_step - 1 : 
-      torch.save({
-        "epoch" : epoch, 
-        "model" : model.state_dict(), 
-        "optimizer": optimizer.state_dict(),
-        "loss" : avg_epoch_loss
+    torch.save({
+      "epoch" : epoch, 
+      "model" : model.state_dict(), 
+      "optimizer": optimizer.state_dict(),
+      "loss" : avg_epoch_loss
       }, config["path_to_checkpoint"])
 
-      config["trainer"]["current_epoch"] = epoch + 1 
-      config["checkpoint"] = True
+    config["trainer"]["current_epoch"] = epoch + 1 
+    config["checkpoint"] = True
 
-      with open("pretrain.config.json", "w") as out : 
-        json.dump(config, out, indent=4)
-      print("Checkpoint Saved")
+    with open("pretrain.config.json", "w") as out : 
+      json.dump(config, out, indent=4)
+    print("Checkpoint Saved")
     
 
 if __name__ == "__main__" :

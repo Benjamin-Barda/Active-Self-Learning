@@ -130,7 +130,7 @@ dmypy.json
 
 #data
 data/
-pretrained_weights/
+checkpoint/
 old/
 
 *.private.*

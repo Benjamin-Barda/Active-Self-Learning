@@ -10,10 +10,9 @@
         "momentum": 0.9
     },
     "trainer": {
-        "batch_size": 100,
+        "batch_size": 256,
         "max_epochs": 800,
-        "current_epoch": 0,
-        "save_step": 20
+        "current_epoch": 249
     },
     "checkpoint": false,
     "path_to_checkpoint": "checkpoint/resnet18_800_sgd_V0.pt"
