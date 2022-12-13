@@ -7,6 +7,7 @@ import torchvision.models as models
 import numpy as np
 import pandas as pd
 import warnings
+import argparse
 
 from torch.nn.init import kaiming_uniform_, normal_
 from torch.utils.data import DataLoader, Subset
@@ -19,6 +20,13 @@ from utils.schedulers import cosine_decay_scheduler
 
 warnings.filterwarnings("ignore")
 
+parser = argparse.ArgumentParser()
+
+base_line_eval = True
+if base_line_eval : 
+    print("[ + ] Baseline evaluation, Using whole dataset, No stage 3")
+
+args = parser.parse_args()
 
 def load_pretrained_backbone(num_classes: int) -> nn.Module:
     """
@@ -31,10 +39,6 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
     model_state = checkpoint["model"]
 
     model = models.resnet18(num_classes=num_classes)
-    # Freezing the weigths for all the model except the last one
-    for name, param in model.named_parameters():
-        if name not in ["fc.weigth", "fc.bias"]:
-            param.requires_grad = False
 
     fc_weigth = kaiming_uniform_(model.fc.weight.data)
     fc_bias = normal_(model.fc.bias.data)
@@ -54,6 +58,12 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
     state_dict["fc.bias"] = fc_bias
 
     model.load_state_dict(state_dict)
+
+    # Freezing the weigths for all the model except the last one
+    for name, param in model.named_parameters():
+        if name not in ["fc.weight", "fc.bias"]:
+            param.requires_grad = False
+
     return model
 
 
@@ -72,17 +82,20 @@ def main():
     transforms = T.Compose([T.ToTensor()])
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    cifar10 = datasets.CIFAR10(root="data", train=True, download=False)
     eval_data = datasets.CIFAR10(
         root="data", train=False, download=True, transform=transforms
     )
 
     # How many images to add to add to the labeled set evry cycle
-    b_step = int(cfg.b * len(cifar10))
+    if not base_line_eval: 
+        cifar10 = datasets.CIFAR10(root="data", train=True, download=False)
+        train_data = CIFAR10ActiveWrapper(
+            cifar10, cfg.initial_budget, cfg.final_budget, cfg.b, transform=transforms
+        )
+        b_step = int(cfg.b * len(cifar10))
+    else: 
+        train_data = datasets.CIFAR10(root="data", train=True, download=False, transform=transforms)
 
-    train_data = CIFAR10ActiveWrapper(
-        cifar10, cfg.initial_budget, cfg.final_budget, cfg.b, transform=transforms
-    )
 
     loader = DataLoader(
         train_data,
@@ -108,7 +121,10 @@ def main():
     for epoch in range(cfg.stage2_num_epochs):
 
         model.train()
-        train_data.goto_stage2()
+
+        if not base_line_eval:
+            train_data.goto_stage2()
+
         loader = DataLoader(
             train_data,
             batch_size=cfg.stage2_bs,
@@ -116,9 +132,10 @@ def main():
             shuffle=True,
         )
 
-        print("\n")
-        print(f"Current budget spent: {(train_data.spent_budget * 100):.2f}% ")
-        print(f"Labelled: {len(train_data)}")
+        if not base_line_eval:
+            print("\n")
+            print(f"Current budget spent: {(train_data.spent_budget * 100):.2f}% ")
+            print(f"Labelled: {len(train_data)}")
 
         running_loss = 0.0
 
@@ -160,8 +177,9 @@ def main():
                 f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {100 * correct // total}%"
             )
 
+
             # Asking the oracle step untill budget is exhausted
-            if epoch % 1 == 0 and train_data.spent_budget < cfg.final_budget:
+            if not base_line_eval and epoch % 1 == 0 and train_data.spent_budget < cfg.final_budget:
 
                 train_data.goto_stage3()
                 loader = DataLoader(train_data, cfg.stage3_bs, cfg.stage3_num_workers)

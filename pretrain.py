@@ -31,6 +31,7 @@ parser.add_argument(
 parser.add_argument("--encoder_dim", help="Output dimension for the encoder")
 parser.add_argument("--pred_dim", help="Output dimension for the predictor")
 
+
 args = parser.parse_args()
 
 device = "cuda" if torch.cuda.is_available() and args.device == "gpu" else "cpu"
@@ -148,7 +149,7 @@ def main():
         config["trainer"]["current_epoch"] = epoch + 1
         config["checkpoint"] = True
 
-        with open("pretrain.config.json", "w") as out:
+        with open(args.config, "w") as out:
             json.dump(config, out, indent=4)
         print("Checkpoint Saved")
 

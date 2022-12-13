@@ -21,6 +21,7 @@ __C.stage2_weigth_decay = 0
 __C.stage2_num_epochs = 100
 
 
+
 #Stage3 training parameters
 __C.stage3_bs = 100
 __C.stage3_num_workers = 1

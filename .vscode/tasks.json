@@ -12,6 +12,16 @@
                 "kind": "build",
                 "isDefault": true
             }
+        }, 
+        {
+            "label": "Linear classifier",
+            "type": "shell",
+            "command": "C:/Users/benjamin.barda/Anaconda3/Scripts/activate && conda activate base && python linear_classifier.py",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
         }
     ]
 }
