@@ -6,7 +6,7 @@
         {
             "label": "Pretrain",
             "type": "shell",
-            "command": "C:/Users/benjamin.barda/Anaconda3/Scripts/activate && conda activate base && python pretrain.py --config=pretrain.config.json --device=gpu --model=resnet18",
+            "command": "C:/Users/benjamin.barda/Anaconda3/Scripts/activate && conda activate base && python pretrain.py --config=pretrain.config.json --device=gpu --model=resnet18 --encoder_dim=2048 --pred_dim=512 --batch_size=36 --num_epochs=800",
             "problemMatcher": [],
             "group": {
                 "kind": "build",

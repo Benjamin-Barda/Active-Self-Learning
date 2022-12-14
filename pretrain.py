@@ -19,17 +19,21 @@ parser = argparse.ArgumentParser(description="Pretrain the backbone")
 parser.add_argument(
     "--config",
     help="path to the config file, any command line argument will override the config file",
+    type=str,
 )
 parser.add_argument(
-    "--device",  help="Whant device to use", choices=["cpu", "gpu"]
+    "--device", help="Whant device to use", choices=["cpu", "gpu"], type=str
 )
 parser.add_argument(
     "--model",
     help="Choose the backbone for the simsiam network",
     choices=["resnet18", "resnet50"],
+    type=str,
 )
-parser.add_argument("--encoder_dim", help="Output dimension for the encoder")
-parser.add_argument("--pred_dim", help="Output dimension for the predictor")
+parser.add_argument("--encoder_dim", help="Output dimension for the encoder", type=int)
+parser.add_argument("--pred_dim", help="Output dimension for the predictor", type=int)
+parser.add_argument("--batch_size", help="Batch size", type=int)
+parser.add_argument("--num_epochs", help="Total number of epoch for pretraining path to checkpoint in config file", type=int)
 
 
 args = parser.parse_args()
@@ -76,14 +80,11 @@ def main():
     with open(args.config, "r") as f:
         config = json.load(f)
 
-    model_config = config["model"]
 
     model = BackBoneEncoder(
-        models.__dict__[model_config["architecture"]]
-        if args.model is None
-        else args.model,
-        model_config["encoder_dim"] if args.encoder_dim is None else args.encoder_dim,
-        model_config["pred_dim"] if args.pred_dim is None else args.pred_dim,
+        models.__dict__[args.model],
+        args.encoder_dim,
+        args.pred_dim,
         in_pretrain=True,
     ).to(device)
 
@@ -95,9 +96,9 @@ def main():
         transforms.ToTensor(),
     ]
 
-    batch_size = config["trainer"]["batch_size"]
+    batch_size = args.batch_size
     current_epoch = 0
-    num_epochs = config["trainer"]["max_epochs"]
+    num_epochs = args.num_epochs
 
     train_data = datasets.CIFAR10(
         root="data",
@@ -105,8 +106,7 @@ def main():
         download=True,
         transform=TwoCropTransform(transforms.Compose(augmentation)),
     )
-    idx = [x for x in range(batch_size)]
-    train_data = Subset(train_data, idx)
+
     loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
     criterion = nn.CosineSimilarity(dim=1).to("cuda")
@@ -131,6 +131,10 @@ def main():
 
     model.train()
 
+    for name, param in model.named_parameters(): 
+        print(name, param.requires_grad) 
+    
+
     for epoch in range(current_epoch, num_epochs):
         print(f"Epoch {epoch}")
         avg_epoch_loss = train(model, criterion, optimizer, loader, epoch)
@@ -145,8 +149,6 @@ def main():
             },
             config["path_to_checkpoint"],
         )
-
-        config["trainer"]["current_epoch"] = epoch + 1
         config["checkpoint"] = True
 
         with open(args.config, "w") as out:
