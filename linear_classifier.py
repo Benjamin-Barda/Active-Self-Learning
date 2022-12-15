@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import transforms as T
 
 from utils.lcls_cfg import cfg
+from utils.meters import AverageMeter
 from ActiveWrapper import CIFAR10ActiveWrapper
 
 from utils.schedulers import cosine_decay_scheduler
@@ -22,7 +23,7 @@ warnings.filterwarnings("ignore")
 
 parser = argparse.ArgumentParser()
 
-base_line_eval = True
+base_line_eval = False
 if base_line_eval : 
     print("[ + ] Baseline evaluation, Using whole dataset, No stage 3")
 
@@ -35,7 +36,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
     load from checkpoint.
     """
 
-    checkpoint = torch.load("checkpoint/resnet18_533_sgd_V0.pt")
+    checkpoint = torch.load("checkpoint/resnet18_715_sgd_V0.pt")
     model_state = checkpoint["model"]
 
     model = models.resnet18(num_classes=num_classes)
@@ -79,22 +80,30 @@ def visualize_ds_stats(labels):
 
 def main():
 
-    transforms = T.Compose([T.ToTensor()])
+    transforms_train = T.Compose([
+        T.ToTensor(),
+        T.RandomHorizontalFlip(), 
+        T.RandomApply([T.ColorJitter(.4, .4, .4, .4)], p=.2)
+    ])
+
+    transforms_eval = T.Compose([
+        T.ToTensor()
+    ])
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     eval_data = datasets.CIFAR10(
-        root="data", train=False, download=True, transform=transforms
+        root="data", train=False, download=True, transform=transforms_eval
     )
 
     # How many images to add to add to the labeled set evry cycle
     if not base_line_eval: 
         cifar10 = datasets.CIFAR10(root="data", train=True, download=False)
         train_data = CIFAR10ActiveWrapper(
-            cifar10, cfg.initial_budget, cfg.final_budget, cfg.b, transform=transforms
+            cifar10, cfg.initial_budget, cfg.final_budget, cfg.b, transform=transforms_train
         )
         b_step = int(cfg.b * len(cifar10))
     else: 
-        train_data = datasets.CIFAR10(root="data", train=True, download=False, transform=transforms)
+        train_data = datasets.CIFAR10(root="data", train=True, download=False, transform=transforms_train)
 
 
     loader = DataLoader(
@@ -109,12 +118,25 @@ def main():
     model = load_pretrained_backbone(10)
     model = model.to(device)
 
-    stage2_optimizer = optim.SGD(
-        model.parameters(),
+    # The optimizer should work only on the non-frozen modules
+    parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
+    assert(len(parameters) == 2)
+
+    # stage2_optimizer = optim.SGD(
+    #     parameters,
+    #     cfg.stage2_lr,
+    #     weight_decay=cfg.stage2_weigth_decay,
+    #     momentum=0.9,
+    # )
+    
+    stage2_optimizer = optim.Adam(
+        parameters,
         cfg.stage2_lr,
-        weight_decay=cfg.stage2_weigth_decay,
-        momentum=0.9,
+        weight_decay=cfg.stage2_weigth_decay
+        # momentum=0.9,
     )
+    
+
     stage2_criterion = nn.CrossEntropyLoss()
 
     # Stage2 Training
@@ -137,7 +159,7 @@ def main():
             print(f"Current budget spent: {(train_data.spent_budget * 100):.2f}% ")
             print(f"Labelled: {len(train_data)}")
 
-        running_loss = 0.0
+        losses = AverageMeter("Loss", ":.5f")
 
         # Traning Loop
         for i, (images, labels) in enumerate(loader):
@@ -154,8 +176,11 @@ def main():
             loss.backward()
             stage2_optimizer.step()
 
-            running_loss += loss.item()
-            print(f"Epoch {epoch + 1}, Loss: {running_loss /(i + 1) }", end="\r")
+            # running_loss += loss.item()
+            losses.update(loss.item(), images.size(0))
+
+            print(f"Epoch {epoch + 1}, {losses}" , end="\r")
+
         # Eval
         with torch.no_grad():
 

@@ -13,8 +13,8 @@ __C.final_budget = 0.8
 __C.b = .005
 
 # Stage2 training parameters
-__C.stage2_bs = 32
-__C.stage2_lr = 2
+__C.stage2_bs = 256
+__C.stage2_lr = 30
 __C.stage2_num_workers = 1
 __C.stage2_momentum = .9
 __C.stage2_weigth_decay = 0

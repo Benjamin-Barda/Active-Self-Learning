@@ -30,10 +30,14 @@ parser.add_argument(
     choices=["resnet18", "resnet50"],
     type=str,
 )
+parser.add_argument(
+    "--num_epochs",
+    help="Total number of epoch for pretraining path to checkpoint in config file",
+    type=int,
+)
 parser.add_argument("--encoder_dim", help="Output dimension for the encoder", type=int)
 parser.add_argument("--pred_dim", help="Output dimension for the predictor", type=int)
 parser.add_argument("--batch_size", help="Batch size", type=int)
-parser.add_argument("--num_epochs", help="Total number of epoch for pretraining path to checkpoint in config file", type=int)
 
 
 args = parser.parse_args()
@@ -80,7 +84,6 @@ def main():
     with open(args.config, "r") as f:
         config = json.load(f)
 
-
     model = BackBoneEncoder(
         models.__dict__[args.model],
         args.encoder_dim,
@@ -89,10 +92,12 @@ def main():
     ).to(device)
 
     augmentation = [
-        transforms.RandomResizedCrop(28, scale=(0.2, 1)),
-        transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.6),
+        transforms.RandomResizedCrop(28, scale=(0.4, 1)),
+        transforms.RandomApply([
+            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+            ], p=0.6),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomGrayscale(p=2),
+        transforms.RandomGrayscale(p=.2),
         transforms.ToTensor(),
     ]
 
@@ -131,9 +136,8 @@ def main():
 
     model.train()
 
-    for name, param in model.named_parameters(): 
-        print(name, param.requires_grad) 
-    
+    for name, param in model.named_parameters():
+        print(name, param.requires_grad)
 
     for epoch in range(current_epoch, num_epochs):
         print(f"Epoch {epoch}")
