@@ -54,7 +54,7 @@ class CIFAR10ActiveWrapper(Dataset):
         self.current_stage = initial_stage
 
         # First assumption is that all of the data is unlabeled thus belongs to stage3 data
-        self.index_map = {k: 3 for k in range(len(dataset))}
+        index_map = {k: 3 for k in range(len(dataset))}
 
         # TODO Change them to numpy array
         self.stage2_indexes = list()
@@ -78,40 +78,17 @@ class CIFAR10ActiveWrapper(Dataset):
         while len(self.stage2_indexes) != int(len(dataset) * initial_budget):
             idx = random.randint(0, len(dataset) - 1)
 
-            if self.index_map[idx] == 3:
-                self.index_map[idx] = 2
+            if index_map[idx] == 3:
+                index_map[idx] = 2
                 self.stage2_indexes.append(idx)
-
-        self.stage3_indexes = [x for x in self.index_map if self.index_map[x] == 3]
-
-        self.stage2_data = Subset(self.dataset, self.stage2_indexes)
-        self.stage3_data = Subset(self.dataset, self.stage3_indexes)
-
+        self.stage3_indexes = [x for x in index_map if index_map[x] == 3]
+        self.stage3_indexes.sort()
+        self.stage2_indexes.sort()
         assert len(self.stage2_indexes) + len(self.stage3_indexes) == len(dataset)
 
-        self.transform = transform
+        self.stage2_transform = transform
         self.stage3_transform = transforms.Compose([transforms.ToTensor()])
 
-    def get_stage2_loader(self, batch_size, num_workers=1):
-        return DataLoader(
-            self, batch_size=batch_size, num_workers=num_workers, shuffle=True
-        )
-
-    def get_stage3_loader(self, batch_size, num_workers=1):
-        return DataLoader(
-            self, batch_size=batch_size, num_workers=num_workers, shuffle=True
-        )
-
-    def getLoaders(
-        self,
-        stage2_batch_size,
-        stage3_batch_size,
-        stage2_num_workers=1,
-        stage3_num_workers=1,
-    ):
-        return self.get_stage2_loader(
-            stage2_batch_size, stage2_num_workers
-        ), self.get_stage3_loader(stage3_batch_size, stage3_num_workers)
 
     def is_stage2(self) -> bool:
         return self.current_stage == self.STAGE2
@@ -125,57 +102,37 @@ class CIFAR10ActiveWrapper(Dataset):
     def goto_stage3(self) -> None:
         self.current_stage = self.STAGE3
 
-    def query_oracle_r(self, indices: torch.LongTensor):
+    
+    def query_oracle(self, indices: torch.LongTensor):
 
         indices = indices.tolist()
 
         top_scoring = np.asarray(self.stage3_indexes)[indices].tolist()
-
         self.stage2_indexes += top_scoring
+
         self.stage3_indexes = [
             x for x in self.stage3_indexes if x not in self.stage2_indexes
         ]
-
-        self.stage2_data = Subset(self.dataset, self.stage2_indexes)
-        self.stage3_data = Subset(self.dataset, self.stage3_indexes)
-
-        self.spent_budget += cfg2.b
-
-    
-    def query_oracle(self, indices: torch.LongTensor):
-        # indices are the top scoring indices tens
-        indices = indices.numpy()
-
-        mask = np.isin(self.stage3_indexes, indices, invert=True)
-        inverted_mask = np.invert(mask)
-
-        s2idx = np.asarray(self.stage3_indexes)
-        s3idx = np.asarray(self.stage3_indexes)
-
-        s2idx = s2idx[inverted_mask]
-        s3idx = s3idx[mask]
-
-        self.stage2_indexes += s2idx.tolist()
-        self.stage3_indexes = s3idx.tolist()
-
-        self.stage2_data = Subset(self.dataset, self.stage2_indexes)
-        self.stage3_data = Subset(self.dataset, self.stage3_indexes)
+        self.stage2_indexes.sort()
+        self.stage3_indexes.sort()
 
         self.spent_budget += cfg2.b
+
+        ...
 
     def __len__(self):
         if self.current_stage == self.STAGE2:
-            return len(self.stage2_data)
+            return len(self.stage2_indexes)
         else:
-            return len(self.stage3_data)
+            return len(self.stage3_indexes)
 
     def __getitem__(self, index):
         if self.current_stage == self.STAGE2:
-            images, labels = self.stage2_data[index]
-            images = self.transform(images)
+            images, labels = self.dataset[self.stage2_indexes[index]]
+            images = self.stage2_transform(images)
             return images, labels
         else:
-            images, labels = self.stage3_data[self.stage[index]]
+            images, labels = self.dataset[self.stage3_indexes[index]]
             images = self.stage3_transform(images)
             return images, labels
 
@@ -210,8 +167,9 @@ if __name__ == "__main__":
     data = datasets.CIFAR10(root="data", train=True, download=False)
 
     ds = CIFAR10ActiveWrapper(
-        data, 0.1, 0.5, 10, transform=transforms.ToTensor(), initial_stage=3
+        data, 0.1, 0.5, 10, transform=transforms.ToTensor()
     )
+    ds.goto_stage3()
     ds.query_oracle(torch.LongTensor([x for x in range(50)]))      
 
     loader = DataLoader(ds, batch_size=1)
@@ -220,12 +178,12 @@ if __name__ == "__main__":
     for i, (image,_) in enumerate(loader):
         # print(image)
         idx = ds.stage3_indexes[i]
-        sample, _ = ds.stage3_data[idx]
-        
-        sample = transforms.ToTensor()(sample).permute(1,2,0).numpy()
+        sample, _ = ds.dataset[idx]
+        sample = transforms.ToTensor()(sample)
+        sample = sample.permute(1,2,0).numpy()
         image = image[0].permute(1,2,0).numpy()
         if (sample != image).any() : 
             print("NOPE")
        
         plot_images([sample, image])    
-        input()
+
