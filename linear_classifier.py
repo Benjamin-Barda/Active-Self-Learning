@@ -12,6 +12,7 @@ import argparse
 from torch.nn.init import kaiming_uniform_, normal_
 from torch.utils.data import DataLoader, Subset
 from torchvision import transforms as T
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from utils.lcls_cfg import cfg
 from utils.meters import AverageMeter
@@ -36,7 +37,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
     load from checkpoint.
     """
 
-    checkpoint = torch.load("checkpoint/resnet18_715_sgd_V0.pt")
+    checkpoint = torch.load("checkpoint/resnet18_0_sgd_V0.pt")
     model_state = checkpoint["model"]
 
     model = models.resnet18(num_classes=num_classes)
@@ -64,6 +65,8 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
     for name, param in model.named_parameters():
         if name not in ["fc.weight", "fc.bias"]:
             param.requires_grad = False
+        
+    # Here override model.fc in order to add more layers at the end
 
     return model
 
@@ -71,7 +74,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 def entropy_score(preds):
     # preds (bs, 10)
     preds = nn.functional.softmax(preds, dim=1)
-    return -torch.sum(preds * torch.log2(preds), dim=1)
+    return  - torch.sum(preds * torch.log2(preds), dim=1)
 
 
 def visualize_ds_stats(labels):
@@ -99,8 +102,8 @@ def main():
     if not base_line_eval: 
         cifar10 = datasets.CIFAR10(root="data", train=True, download=False)
         train_data = CIFAR10ActiveWrapper(
-            cifar10, cfg.initial_budget, cfg.final_budget, cfg.b, transform=transforms_train
-        )
+            cifar10, cfg.initial_budget, cfg.final_budget, cfg.b, transform=transforms_train, seed = 69
+            )
         b_step = int(cfg.b * len(cifar10))
     else: 
         train_data = datasets.CIFAR10(root="data", train=True, download=False, transform=transforms_train)
@@ -122,19 +125,20 @@ def main():
     parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
     assert(len(parameters) == 2)
 
-    # stage2_optimizer = optim.SGD(
-    #     parameters,
-    #     cfg.stage2_lr,
-    #     weight_decay=cfg.stage2_weigth_decay,
-    #     momentum=0.9,
-    # )
-    
-    stage2_optimizer = optim.Adam(
+    stage2_optimizer = optim.SGD(
         parameters,
         cfg.stage2_lr,
-        weight_decay=cfg.stage2_weigth_decay
-        # momentum=0.9,
+        weight_decay=cfg.stage2_weigth_decay,
+        momentum=0.9,
     )
+    
+    # stage2_optimizer = optim.Adam(
+    #     parameters,
+    #     cfg.stage2_lr,
+    #     weight_decay=cfg.stage2_weigth_decay
+    # )
+
+    lr_scheduler = ReduceLROnPlateau(stage2_optimizer, 'min', patience=5, verbose=True, factor=0.1 )
     
 
     stage2_criterion = nn.CrossEntropyLoss()
@@ -187,24 +191,31 @@ def main():
             model.eval()
             total = 0
             correct = 0
+            losses.reset()
 
             for images, labels in eval_loader:
 
                 images = images.to(device)
+                # labels = nn.functional.one_hot(labels, 10).type(torch.FloatTensor)
                 labels = labels.to(device)
 
                 preds = model.forward(images)
                 total += labels.size(0)
+
                 _, predictions = torch.max(preds.data, 1)
                 correct += (predictions == labels).sum().item()
+                loss = stage2_criterion(preds, labels)
+
+                losses.update(loss.item(), images.size(0))
 
             print(
                 f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {100 * correct // total}%"
             )
+            lr_scheduler.step(losses.avg)
 
 
             # Asking the oracle step untill budget is exhausted
-            if not base_line_eval and epoch % 1 == 0 and train_data.spent_budget < cfg.final_budget:
+            if not base_line_eval and epoch % 5 == 4 and train_data.spent_budget < cfg.final_budget:
 
                 train_data.goto_stage3()
                 loader = DataLoader(train_data, cfg.stage3_bs, cfg.stage3_num_workers)
@@ -226,9 +237,9 @@ def main():
 
                 # Dataset still in stage3 mode
                 train_data.query_oracle_r(indices[:b_step])
-                cosine_decay_scheduler(
-                    stage2_optimizer, 0.05, epoch, cfg.stage2_num_epochs
-                )
+                # cosine_decay_scheduler(
+                #     stage2_optimizer, 0.05, epoch, cfg.stage2_num_epochs
+                # )
 
 
 if __name__ == "__main__":
