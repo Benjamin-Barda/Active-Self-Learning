@@ -29,6 +29,7 @@ class CIFAR10ActiveWrapper(Dataset):
         b: int,
         initial_stage: int = 2,
         transform: transforms = None,
+        seed : int = None
     ):
         """
         Args:
@@ -71,6 +72,8 @@ class CIFAR10ActiveWrapper(Dataset):
         self.spent_budget = initial_budget
         self.total_budget = total_budget
 
+        if seed is not None : 
+            random.seed(seed)
         # Build first set of indices based on the intial Budget
         while len(self.stage2_indexes) != int(len(dataset) * initial_budget):
             idx = random.randint(0, len(dataset) - 1)
@@ -87,6 +90,7 @@ class CIFAR10ActiveWrapper(Dataset):
         assert len(self.stage2_indexes) + len(self.stage3_indexes) == len(dataset)
 
         self.transform = transform
+        self.stage3_transform = transforms.Compose([transforms.ToTensor()])
 
     def get_stage2_loader(self, batch_size, num_workers=1):
         return DataLoader(
@@ -171,23 +175,57 @@ class CIFAR10ActiveWrapper(Dataset):
             images = self.transform(images)
             return images, labels
         else:
-            images, labels = self.stage3_data[index]
-            images = self.transform(images)
+            images, labels = self.stage3_data[self.stage[index]]
+            images = self.stage3_transform(images)
             return images, labels
 
 
+
+
+
 if __name__ == "__main__":
+
+    import matplotlib.pyplot as plt
+
+    def plot_images(images) : 
+        num_images = len(images)
+
+        if num_images == 0 : 
+            return 
+
+        # images per row
+        img_per_row = 2
+        num_row = num_images // img_per_row
+        fig, ax = plt.subplots(nrows=num_row, ncols=img_per_row)
+
+        for i, axi in enumerate(ax.flat): 
+            axi.imshow(images[i])
+        
+        plt.show()
+
+        
+
+        
+
     data = datasets.CIFAR10(root="data", train=True, download=False)
+
     ds = CIFAR10ActiveWrapper(
         data, 0.1, 0.5, 10, transform=transforms.ToTensor(), initial_stage=3
     )
+    ds.query_oracle(torch.LongTensor([x for x in range(50)]))      
+
     loader = DataLoader(ds, batch_size=1)
 
-    for i, image in enumerate(loader):
+
+    for i, (image,_) in enumerate(loader):
         # print(image)
         idx = ds.stage3_indexes[i]
         sample, _ = ds.stage3_data[idx]
-        sample = transforms.ToTensor()(sample)
-        print(sample == image)
-
+        
+        sample = transforms.ToTensor()(sample).permute(1,2,0).numpy()
+        image = image[0].permute(1,2,0).numpy()
+        if (sample != image).any() : 
+            print("NOPE")
+       
+        plot_images([sample, image])    
         input()
