@@ -135,7 +135,7 @@ class CIFAR10ActiveWrapper(Dataset):
         self.stage2_data = Subset(self.dataset, self.stage2_indexes)
         self.stage3_data = Subset(self.dataset, self.stage3_indexes)
 
-        self.spent_budget += cfg2.b
+        self.spent_budget += len(indices) / len(self.dataset)
 
     
     def query_oracle(self, indices: torch.LongTensor):
@@ -157,7 +157,7 @@ class CIFAR10ActiveWrapper(Dataset):
         self.stage2_data = Subset(self.dataset, self.stage2_indexes)
         self.stage3_data = Subset(self.dataset, self.stage3_indexes)
 
-        self.spent_budget += cfg2.b
+        self.spent_budget +=len(indices) / len(self.dataset)
 
     def __len__(self):
         if self.current_stage == self.STAGE2:
