@@ -13,3 +13,4 @@
 
     "path_to_checkpoint" : "checkpoint/resnet18_0_sgd_V0.pt"
 }
+
