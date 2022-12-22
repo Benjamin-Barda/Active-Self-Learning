@@ -8,13 +8,13 @@ import numpy as np
 import pandas as pd
 import warnings
 import argparse
+import json
 
 from torch.nn.init import kaiming_uniform_, normal_
 from torch.utils.data import DataLoader, Subset
 from torchvision import transforms as T
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from utils.lcls_cfg import cfg
 from utils.meters import AverageMeter
 from ActiveWrapper import CIFAR10ActiveWrapper
 
@@ -24,11 +24,38 @@ warnings.filterwarnings("ignore")
 
 parser = argparse.ArgumentParser()
 
-base_line_eval = False
-if base_line_eval : 
-    print("[ + ] Baseline evaluation, Using whole dataset, No stage 3")
+parser.add_argument(
+    "--config",
+    help="path to the config file, any command line argument will override the config file",
+    type=str,
+)
+parser.add_argument(
+    "--device", help="Whant device to use", choices=["cpu", "gpu"], type=str
+)
+
+parser.add_argument(
+    "--num_epochs",
+    help="Total number of epoch for pretraining path to checkpoint in config file",
+    type=int,
+)
+
+parser.add_argument(
+    "--base_line_eval", 
+    help="Wether to apply active learning techiques or nor", 
+    type=bool, 
+    default=False
+)
+parser.add_argument("--batch_size", help="Batch size", type=int)
+parser.add_argument("--num_workers", help="how many workers to spwan for the dataloader", type=int, default=1)
 
 args = parser.parse_args()
+
+with open(args.config, "r") as f: 
+    config = json.load(f)
+
+if args.base_line_eval : 
+    print("[ + ] Baseline evaluation, Using whole dataset, No stage 3")
+
 
 def load_pretrained_backbone(num_classes: int) -> nn.Module:
     """
@@ -37,7 +64,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
     load from checkpoint.
     """
 
-    checkpoint = torch.load("checkpoint/resnet18_0_sgd_V0.pt")
+    checkpoint = torch.load(config["path_to_checkpoint"])
     model_state = checkpoint["model"]
 
     model = models.resnet18(num_classes=num_classes)
@@ -93,30 +120,32 @@ def main():
         T.ToTensor()
     ])
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() and args.device == "gpu" else "cpu"
     eval_data = datasets.CIFAR10(
         root="data", train=False, download=True, transform=transforms_eval
     )
 
+
+
     # How many images to add to add to the labeled set evry cycle
-    if not base_line_eval: 
+    if not args.base_line_eval: 
         cifar10 = datasets.CIFAR10(root="data", train=True, download=False)
         train_data = CIFAR10ActiveWrapper(
-            cifar10, cfg.initial_budget, cfg.final_budget, cfg.b, transform=transforms_train, seed = 69
-            )
-        b_step = int(cfg.b * len(cifar10))
+            cifar10, config["al"]["initial_budget"], config["al"]["final_budget"], config["al"]["to_label_each_round"], transform=transforms_train
+        )
+        b_step = int( config["al"]["to_label_each_round"] * len(cifar10))
     else: 
         train_data = datasets.CIFAR10(root="data", train=True, download=False, transform=transforms_train)
 
 
-    loader = DataLoader(
-        train_data,
-        batch_size=cfg.stage2_bs,
-        num_workers=cfg.stage2_num_workers,
-        shuffle=True,
-    )
+    # loader = DataLoader(
+    #     train_data,
+    #     batch_size=args.batch_size,
+    #     num_workers=args.num_workers,
+    #     shuffle=True,
+    # )
 
-    eval_loader = DataLoader(eval_data, batch_size=cfg.stage2_bs)
+    eval_loader = DataLoader(eval_data, batch_size=args.batch_size)
 
     model = load_pretrained_backbone(10)
     model = model.to(device)
@@ -127,38 +156,29 @@ def main():
 
     stage2_optimizer = optim.SGD(
         parameters,
-        cfg.stage2_lr,
-        weight_decay=cfg.stage2_weigth_decay,
-        momentum=0.9,
+        config["optimizer"]["lr"],
+        weight_decay=config["optimizer"]["weight_decay"],
+        momentum=config["optimizer"]["weight_decay"],
     )
     
-    # stage2_optimizer = optim.Adam(
-    #     parameters,
-    #     cfg.stage2_lr,
-    #     weight_decay=cfg.stage2_weigth_decay
-    # )
-
-    lr_scheduler = ReduceLROnPlateau(stage2_optimizer, 'min', patience=5, verbose=True, factor=0.1 )
-    
-
     stage2_criterion = nn.CrossEntropyLoss()
 
     # Stage2 Training
-    for epoch in range(cfg.stage2_num_epochs):
+    for epoch in range(args.num_epochs):
 
         model.train()
 
-        if not base_line_eval:
+        if not args.base_line_eval:
             train_data.goto_stage2()
 
         loader = DataLoader(
             train_data,
-            batch_size=cfg.stage2_bs,
-            num_workers=cfg.stage2_num_workers,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
             shuffle=True,
         )
 
-        if not base_line_eval:
+        if not args.base_line_eval:
             print("\n")
             print(f"Current budget spent: {(train_data.spent_budget * 100):.2f}% ")
             print(f"Labelled: {len(train_data)}")
@@ -185,6 +205,9 @@ def main():
 
             print(f"Epoch {epoch + 1}, {losses}" , end="\r")
 
+        cosine_decay_scheduler(
+            stage2_optimizer, config["optimizer"]["lr"], epoch, args.num_epochs
+        )
         # Eval
         with torch.no_grad():
 
@@ -211,14 +234,14 @@ def main():
             print(
                 f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {100 * correct // total}%"
             )
-            lr_scheduler.step(losses.avg)
+
 
 
             # Asking the oracle step untill budget is exhausted
-            if not base_line_eval and epoch % 5 == 4 and train_data.spent_budget < cfg.final_budget:
+            if not args.base_line_eval and epoch % 1 == 0 and train_data.spent_budget < config["al"]["final_budget"]:
 
                 train_data.goto_stage3()
-                loader = DataLoader(train_data, cfg.stage3_bs, cfg.stage3_num_workers)
+                loader = DataLoader(train_data, args.batch_size, args.num_workers)
 
                 history = list()
                 # Stage3
@@ -237,9 +260,6 @@ def main():
 
                 # Dataset still in stage3 mode
                 train_data.query_oracle_r(indices[:b_step])
-                # cosine_decay_scheduler(
-                #     stage2_optimizer, 0.05, epoch, cfg.stage2_num_epochs
-                # )
 
 
 if __name__ == "__main__":

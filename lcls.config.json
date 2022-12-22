@@ -1,0 +1,15 @@
+{
+    "optimizer": {
+        "lr": 0.05,
+        "weight_decay": 0.0001,
+        "momentum": 0.9
+    },
+
+    "al" : {
+        "initial_budget" : 0.1,
+        "final_budget"   : 0.5, 
+        "to_label_each_round" : 0.05
+    },
+
+    "path_to_checkpoint" : "checkpoint/resnet18_0_sgd_V0.pt"
+}
