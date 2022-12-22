@@ -224,7 +224,7 @@ def main():
 
             print(
                 f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {100 * correct // total}%"
-
+            )            
 
 
             # Asking the oracle step untill budget is exhausted
@@ -249,7 +249,7 @@ def main():
                 _, indices = torch.sort(torch.FloatTensor(history), descending=True)
 
                 # Dataset still in stage3 mode
-                train_data.query_oracle_r(indices[:b_step])
+                train_data.query_oracle(indices[:b_step])
 
 
 if __name__ == "__main__":

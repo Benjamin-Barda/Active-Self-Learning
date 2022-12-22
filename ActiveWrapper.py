@@ -113,9 +113,7 @@ class CIFAR10ActiveWrapper(Dataset):
         self.stage2_indexes.sort()
         self.stage3_indexes.sort()
 
-        self.spent_budget += cfg2.b
-
-        ...
+        self.spent_budget += len(indices) / len(self.dataset)
 
     def __len__(self):
         if self.current_stage == self.STAGE2:
