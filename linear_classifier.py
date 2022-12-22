@@ -13,7 +13,6 @@ import json
 from torch.nn.init import kaiming_uniform_, normal_
 from torch.utils.data import DataLoader, Subset
 from torchvision import transforms as T
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from utils.meters import AverageMeter
 from ActiveWrapper import CIFAR10ActiveWrapper
@@ -92,8 +91,6 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
     for name, param in model.named_parameters():
         if name not in ["fc.weight", "fc.bias"]:
             param.requires_grad = False
-        
-    # Here override model.fc in order to add more layers at the end
 
     return model
 
@@ -101,7 +98,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 def entropy_score(preds):
     # preds (bs, 10)
     preds = nn.functional.softmax(preds, dim=1)
-    return  - torch.sum(preds * torch.log2(preds), dim=1)
+    return -torch.sum(preds * torch.log2(preds), dim=1)
 
 
 def visualize_ds_stats(labels):
@@ -214,26 +211,19 @@ def main():
             model.eval()
             total = 0
             correct = 0
-            losses.reset()
 
             for images, labels in eval_loader:
 
                 images = images.to(device)
-                # labels = nn.functional.one_hot(labels, 10).type(torch.FloatTensor)
                 labels = labels.to(device)
 
                 preds = model.forward(images)
                 total += labels.size(0)
-
                 _, predictions = torch.max(preds.data, 1)
                 correct += (predictions == labels).sum().item()
-                loss = stage2_criterion(preds, labels)
-
-                losses.update(loss.item(), images.size(0))
 
             print(
                 f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {100 * correct // total}%"
-            )
 
 
 

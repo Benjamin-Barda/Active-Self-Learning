@@ -19,3 +19,5 @@ python linear_classifier.py --config=lcls.config.json --num_epochs=100 --batch_s
 
 ```
 python linear_classifier.py --config=lcls.config.json --num_epochs=100 --batch_size=128 --device=gpu --base_line_eval=True
+```
+
