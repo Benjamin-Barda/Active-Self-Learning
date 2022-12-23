@@ -1,9 +1,9 @@
 {
     "optimizer": {
-        "lr": 0.05,
-        "weight_decay": 0.0001,
+        "lr": 0.06,
+        "weight_decay": 0.0004,
         "momentum": 0.9
     },
-    "checkpoint": false,
-    "path_to_checkpoint": "checkpoint/resnet18_0_sgd_V0.pt"
+    "checkpoint": true,
+    "path_to_checkpoint": "checkpoint/resnet18_0_sgd_V2_local.pt"
 }

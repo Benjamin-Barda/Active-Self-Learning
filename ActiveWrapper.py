@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, Subset, IterableDataset, DataLoader
 from torchvision import transforms
 from collections import Counter
 
+
 import numpy as np
 
 import random
@@ -98,6 +99,18 @@ class CIFAR10ActiveWrapper(Dataset):
 
     def goto_stage3(self) -> None:
         self.current_stage = self.STAGE3
+    
+
+    def get_label_info(self) : 
+        ...
+        res = {x : 0 for x in range(10)}
+        for i in self.stage2_indexes : 
+            _, label = self.dataset[i]
+            res[label] += 1
+        
+        return res
+
+
 
     
     def query_oracle(self, indices: torch.LongTensor):

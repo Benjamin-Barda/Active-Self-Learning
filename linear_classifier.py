@@ -17,6 +17,8 @@ from torchvision import transforms as T
 from utils.meters import AverageMeter
 from ActiveWrapper import CIFAR10ActiveWrapper
 
+from torchmetrics.classification import MulticlassAccuracy, MulticlassConfusionMatrix
+
 from utils.schedulers import cosine_decay_scheduler
 
 warnings.filterwarnings("ignore")
@@ -152,13 +154,16 @@ def main():
     assert(len(parameters) == 2)
 
     stage2_optimizer = optim.SGD(
-        parameters,
+        model.parameters(),
         config["optimizer"]["lr"],
         weight_decay=config["optimizer"]["weight_decay"],
         momentum=config["optimizer"]["weight_decay"],
     )
     
     stage2_criterion = nn.CrossEntropyLoss()
+
+    acc = MulticlassAccuracy(num_classes=10).to(device)
+    conf = MulticlassConfusionMatrix(num_classes=10, normalize="true").to(device)
 
     # Stage2 Training
     for epoch in range(args.num_epochs):
@@ -167,6 +172,8 @@ def main():
 
         if not args.base_line_eval:
             train_data.goto_stage2()
+        
+        print(train_data.get_label_info())
 
         loader = DataLoader(
             train_data,
@@ -181,18 +188,17 @@ def main():
             print(f"Labelled: {len(train_data)}")
 
         losses = AverageMeter("Loss", ":.5f")
-
+    
         # Traning Loop
         for i, (images, labels) in enumerate(loader):
 
             images = images.to(device)
-
-            labels = nn.functional.one_hot(labels, 10).type(torch.FloatTensor)
             labels = labels.to(device)
 
             preds = model.forward(images)
 
             stage2_optimizer.zero_grad()
+
             loss = stage2_criterion(preds, labels)
             loss.backward()
             stage2_optimizer.step()
@@ -218,13 +224,20 @@ def main():
                 labels = labels.to(device)
 
                 preds = model.forward(images)
+
+                acc.update(preds, labels)
+                conf.update(preds, labels)
                 total += labels.size(0)
+
+
                 _, predictions = torch.max(preds.data, 1)
                 correct += (predictions == labels).sum().item()
 
             print(
-                f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {100 * correct // total}%"
-            )            
+                f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {acc.compute().item()}%"
+            ) 
+            conf.reset()
+            acc.reset()           
 
 
             # Asking the oracle step untill budget is exhausted
