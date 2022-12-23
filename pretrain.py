@@ -12,9 +12,8 @@ from torch.utils.data import DataLoader
 
 from models.backbone import BackBoneEncoder
 from utils.meters import AverageMeter
-from utils.schedulers import cosine_decay_scheduler
 
-
+# Apply augmentations twice for each image
 class TwoCropTransform:
     def __init__(self, base_transform):
         self.base_transform = base_transform
@@ -26,6 +25,7 @@ class TwoCropTransform:
         return [q, k]
 
 
+# Training Loop
 def train(model, criterion, optimizer, loader, epoch, scaler, scheduler):
     losses = AverageMeter("Loss", ":.4f")
 
@@ -33,15 +33,18 @@ def train(model, criterion, optimizer, loader, epoch, scaler, scheduler):
 
         optimizer.zero_grad()
 
-        with torch.autocast('cuda', dtype=torch.float16):
+        # Conversion to fp16
+        with torch.autocast("cuda", dtype=torch.float16):
             images[0] = images[0].to(device, non_blocking=True)
             images[1] = images[1].to(device, non_blocking=True)
             p1, p2, z1, z2 = model(images[0], images[1])
-
-            loss = - (criterion(p1, z2).mean() + criterion(p2, z1).mean()) * 0.5
-
+            
+            # Loss as described in the original paper, note z's do not contribute to grad
+            loss = -(criterion(p1, z2).mean() + criterion(p2, z1).mean()) * 0.5
 
         losses.update(loss.item(), images[0].shape[0])
+
+        
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -63,14 +66,12 @@ def main():
     ).to(device)
 
     augmentation = [
-        transforms.RandomResizedCrop(32, scale=(0.2, 1.)),
-        transforms.RandomApply([
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-            ], p=0.6),
+        transforms.RandomResizedCrop(32, scale=(0.2, 1.0)),
+        transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.6),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomGrayscale(p=.2),
+        transforms.RandomGrayscale(p=0.2),
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ]
 
     batch_size = args.batch_size
@@ -84,7 +85,9 @@ def main():
         transform=TwoCropTransform(transforms.Compose(augmentation)),
     )
 
-    loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers)
+    loader = DataLoader(
+        train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers
+    )
 
     criterion = nn.CosineSimilarity(dim=-1).to("cuda")
 
@@ -97,9 +100,7 @@ def main():
     )
 
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-        optimizer, 
-        T_0 = 100, 
-        verbose=True
+        optimizer, T_0=100, verbose=True
     )
 
     if config["checkpoint"]:
@@ -111,7 +112,9 @@ def main():
         current_epoch = checkpoint["epoch"]
         loss_history = checkpoint["loss"]
 
-        print(f"Resuming Training from Epoch {current_epoch}, Last Loss {loss_history[-1]}")
+        print(
+            f"Resuming Training from Epoch {current_epoch}, Last Loss {loss_history[-1]}"
+        )
 
     model.train()
 
@@ -122,13 +125,13 @@ def main():
     for epoch in range(current_epoch, num_epochs):
         print(f"Epoch {epoch}")
 
-        avg_epoch_loss = train(model, criterion, optimizer, loader, epoch, scaler, scheduler)
+        avg_epoch_loss = train(
+            model, criterion, optimizer, loader, epoch, scaler, scheduler
+        )
 
         scheduler.step(epoch)
 
         loss_history.append(avg_epoch_loss)
-
-        cosine_decay_scheduler(optimizer, 0.05, epoch, num_epochs)
 
         torch.save(
             {
@@ -136,7 +139,7 @@ def main():
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "loss": loss_history,
-                "scheduler" : scheduler.state_dict()
+                "scheduler": scheduler.state_dict(),
             },
             config["path_to_checkpoint"],
         )
@@ -148,7 +151,7 @@ def main():
 
 
 if __name__ == "__main__":
-    
+
     parser = argparse.ArgumentParser(description="Pretrain the backbone")
 
     parser.add_argument(
@@ -170,11 +173,17 @@ if __name__ == "__main__":
         help="Total number of epoch for pretraining path to checkpoint in config file",
         type=int,
     )
-    parser.add_argument("--encoder_dim", help="Output dimension for the encoder", type=int)
-    parser.add_argument("--pred_dim", help="Output dimension for the predictor", type=int)
+    parser.add_argument(
+        "--encoder_dim", help="Output dimension for the encoder", type=int
+    )
+    parser.add_argument(
+        "--pred_dim", help="Output dimension for the predictor", type=int
+    )
     parser.add_argument("--batch_size", help="Batch size", type=int)
     parser.add_argument("--num_workers", type=int, default=1)
-    parser.add_argument("--fp16", help="If True use mixed point precision", default=True)
+    parser.add_argument(
+        "--fp16", help="If True use mixed point precision", default=True
+    )
 
     args = parser.parse_args()
 
