@@ -1,24 +1,22 @@
+import argparse
+import json
+import warnings
+
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.datasets as datasets
 import torchvision.models as models
-
-import numpy as np
-import pandas as pd
-import warnings
-import argparse
-import json
-
 from torch.nn.init import kaiming_uniform_, normal_
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
+from torchmetrics.classification import (MulticlassAccuracy,
+                                         MulticlassConfusionMatrix)
 from torchvision import transforms as T
 
-from utils.meters import AverageMeter
 from ActiveWrapper import CIFAR10ActiveWrapper
-
-from torchmetrics.classification import MulticlassAccuracy, MulticlassConfusionMatrix
-
+from utils.meters import AverageMeter
 from utils.schedulers import cosine_decay_scheduler
 
 warnings.filterwarnings("ignore")
@@ -41,20 +39,25 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--base_line_eval", 
-    help="Wether to apply active learning techiques or nor", 
-    type=bool, 
-    default=False
+    "--base_line_eval",
+    help="Wether to apply active learning techiques or nor",
+    type=bool,
+    default=False,
 )
 parser.add_argument("--batch_size", help="Batch size", type=int)
-parser.add_argument("--num_workers", help="how many workers to spwan for the dataloader", type=int, default=1)
+parser.add_argument(
+    "--num_workers",
+    help="how many workers to spwan for the dataloader",
+    type=int,
+    default=1,
+)
 
 args = parser.parse_args()
 
-with open(args.config, "r") as f: 
+with open(args.config, "r") as f:
     config = json.load(f)
 
-if args.base_line_eval : 
+if args.base_line_eval:
     print("[ + ] Baseline evaluation, Using whole dataset, No stage 3")
 
 
@@ -109,33 +112,36 @@ def visualize_ds_stats(labels):
 
 def main():
 
-    transforms_train = T.Compose([
-        T.ToTensor(),
-        T.RandomHorizontalFlip(), 
-        T.RandomApply([T.ColorJitter(.4, .4, .4, .4)], p=.2)
-    ])
+    transforms_train = T.Compose(
+        [
+            T.ToTensor(),
+            T.RandomHorizontalFlip(),
+            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.4)], p=0.2),
+        ]
+    )
 
-    transforms_eval = T.Compose([
-        T.ToTensor()
-    ])
+    transforms_eval = T.Compose([T.ToTensor()])
 
     device = "cuda" if torch.cuda.is_available() and args.device == "gpu" else "cpu"
     eval_data = datasets.CIFAR10(
         root="data", train=False, download=True, transform=transforms_eval
     )
 
-
-
     # How many images to add to add to the labeled set evry cycle
-    if not args.base_line_eval: 
+    if not args.base_line_eval:
         cifar10 = datasets.CIFAR10(root="data", train=True, download=False)
         train_data = CIFAR10ActiveWrapper(
-            cifar10, config["al"]["initial_budget"], config["al"]["final_budget"], config["al"]["to_label_each_round"], transform=transforms_train
+            cifar10,
+            config["al"]["initial_budget"],
+            config["al"]["final_budget"],
+            config["al"]["to_label_each_round"],
+            transform=transforms_train,
         )
-        b_step = int( config["al"]["to_label_each_round"] * len(cifar10))
-    else: 
-        train_data = datasets.CIFAR10(root="data", train=True, download=False, transform=transforms_train)
-
+        b_step = int(config["al"]["to_label_each_round"] * len(cifar10))
+    else:
+        train_data = datasets.CIFAR10(
+            root="data", train=True, download=False, transform=transforms_train
+        )
 
     # loader = DataLoader(
     #     train_data,
@@ -151,7 +157,7 @@ def main():
 
     # The optimizer should work only on the non-frozen modules
     parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
-    assert(len(parameters) == 2)
+    assert len(parameters) == 2
 
     stage2_optimizer = optim.SGD(
         model.parameters(),
@@ -159,7 +165,7 @@ def main():
         weight_decay=config["optimizer"]["weight_decay"],
         momentum=config["optimizer"]["weight_decay"],
     )
-    
+
     stage2_criterion = nn.CrossEntropyLoss()
 
     acc = MulticlassAccuracy(num_classes=10).to(device)
@@ -172,7 +178,7 @@ def main():
 
         if not args.base_line_eval:
             train_data.goto_stage2()
-        
+
         print(train_data.get_label_info())
 
         loader = DataLoader(
@@ -188,7 +194,7 @@ def main():
             print(f"Labelled: {len(train_data)}")
 
         losses = AverageMeter("Loss", ":.5f")
-    
+
         # Traning Loop
         for i, (images, labels) in enumerate(loader):
 
@@ -206,7 +212,7 @@ def main():
             # running_loss += loss.item()
             losses.update(loss.item(), images.size(0))
 
-            print(f"Epoch {epoch + 1}, {losses}" , end="\r")
+            print(f"Epoch {epoch + 1}, {losses}", end="\r")
 
         cosine_decay_scheduler(
             stage2_optimizer, config["optimizer"]["lr"], epoch, args.num_epochs
@@ -229,19 +235,21 @@ def main():
                 conf.update(preds, labels)
                 total += labels.size(0)
 
-
                 _, predictions = torch.max(preds.data, 1)
                 correct += (predictions == labels).sum().item()
 
             print(
                 f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {acc.compute().item()}%"
-            ) 
+            )
             conf.reset()
-            acc.reset()           
-
+            acc.reset()
 
             # Asking the oracle step untill budget is exhausted
-            if not args.base_line_eval and epoch % 1 == 0 and train_data.spent_budget < config["al"]["final_budget"]:
+            if (
+                not args.base_line_eval
+                and epoch % 1 == 0
+                and train_data.spent_budget < config["al"]["final_budget"]
+            ):
 
                 train_data.goto_stage3()
                 loader = DataLoader(train_data, args.batch_size, args.num_workers)

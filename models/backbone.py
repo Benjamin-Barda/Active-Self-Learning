@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 
 
-
-
 class BackBoneEncoder(nn.Module) : 
   '''
   SimSiam - Simple Siamese https://arxiv.org/pdf/2011.10566.pdf  

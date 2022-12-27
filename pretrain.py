@@ -10,7 +10,7 @@ import torchvision.transforms as transforms
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.utils.data import DataLoader
 
-from models.backbone import BackBoneEncoder
+from models.backbone_r import SimSiam
 from utils.meters import AverageMeter
 
 # Apply augmentations twice for each image
@@ -44,7 +44,7 @@ def train(model, criterion, optimizer, loader, epoch, scaler, scheduler):
 
         losses.update(loss.item(), images[0].shape[0])
 
-        
+        # Scaling to match fp16 precision
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -58,12 +58,7 @@ def main():
     with open(args.config, "r") as f:
         config = json.load(f)
 
-    model = BackBoneEncoder(
-        models.__dict__[args.model],
-        args.encoder_dim,
-        args.pred_dim,
-        in_pretrain=True,
-    ).to(device)
+    model = SimSiam().to(device)
 
     augmentation = [
         transforms.RandomResizedCrop(32, scale=(0.2, 1.0)),
@@ -99,9 +94,8 @@ def main():
         weight_decay=optim_config["weight_decay"],
     )
 
-    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-        optimizer, T_0=100, verbose=True
-    )
+
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, 800)
 
     if config["checkpoint"]:
 
