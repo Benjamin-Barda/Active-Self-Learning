@@ -87,6 +87,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
         for k in model_state.keys()
         if k[len(offset_char) :] in model.state_dict().keys()
     }
+
     state_dict["fc.weight"] = fc_weigth
     state_dict["fc.bias"] = fc_bias
 
@@ -103,7 +104,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 def entropy_score(preds):
     # preds (bs, 10)
     preds = nn.functional.softmax(preds, dim=1)
-    return -torch.sum(preds * torch.log2(preds), dim=1)
+    return - torch.sum(preds * torch.log2(preds), dim=1)
 
 
 def visualize_ds_stats(labels):
@@ -115,12 +116,20 @@ def main():
     transforms_train = T.Compose(
         [
             T.ToTensor(),
+            T.RandomResizedCrop(32),
             T.RandomHorizontalFlip(),
-            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.4)], p=0.2),
+            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.4)], p=0.2)
         ]
     )
 
-    transforms_eval = T.Compose([T.ToTensor()])
+    transforms_eval = T.Compose([
+            T.ToTensor(),
+            T.RandomResizedCrop(32),
+            T.RandomHorizontalFlip(),
+            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.4)], p=0.2)
+        ])
 
     device = "cuda" if torch.cuda.is_available() and args.device == "gpu" else "cpu"
     eval_data = datasets.CIFAR10(
@@ -156,8 +165,6 @@ def main():
     model = model.to(device)
 
     # The optimizer should work only on the non-frozen modules
-    parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
-    assert len(parameters) == 2
 
     stage2_optimizer = optim.SGD(
         model.parameters(),
@@ -178,8 +185,7 @@ def main():
 
         if not args.base_line_eval:
             train_data.goto_stage2()
-
-        print(train_data.get_label_info())
+            print(train_data.get_label_info())
 
         loader = DataLoader(
             train_data,
@@ -197,13 +203,14 @@ def main():
 
         # Traning Loop
         for i, (images, labels) in enumerate(loader):
+            
+            stage2_optimizer.zero_grad()
 
             images = images.to(device)
             labels = labels.to(device)
 
             preds = model.forward(images)
 
-            stage2_optimizer.zero_grad()
 
             loss = stage2_criterion(preds, labels)
             loss.backward()
@@ -214,9 +221,6 @@ def main():
 
             print(f"Epoch {epoch + 1}, {losses}", end="\r")
 
-        cosine_decay_scheduler(
-            stage2_optimizer, config["optimizer"]["lr"], epoch, args.num_epochs
-        )
         # Eval
         with torch.no_grad():
 
@@ -247,8 +251,8 @@ def main():
             # Asking the oracle step untill budget is exhausted
             if (
                 not args.base_line_eval
-                and epoch % 1 == 0
-                and train_data.spent_budget < config["al"]["final_budget"]
+                and epoch % 10 == 0
+                and train_data.spent_budget <= config["al"]["final_budget"]
             ):
 
                 train_data.goto_stage3()
