@@ -74,7 +74,7 @@ class RotationDataset(Dataset):
 
 if __name__ == "__main__" : 
 
-    show = False
+    show = True
 
     import matplotlib.pyplot as plt
 
@@ -85,22 +85,24 @@ if __name__ == "__main__" :
 
     rot_data = RotationDataset(data, trans) 
 
-    loader = DataLoader(rot_data, batch_size=128)
+    if not show:
 
-    for batch in loader : 
+        loader = DataLoader(rot_data, batch_size=128)
 
-        im1, im2, im3, im4 = batch
-        img1, rot1 = im1
-        img2, rot2 = im2
-        img3, rot3 = im3
-        img4, rot4 = im4
+        for batch in loader : 
+
+            im1, im2, im3, im4 = batch
+            img1, rot1 = im1
+            img2, rot2 = im2
+            img3, rot3 = im3
+            img4, rot4 = im4
 
 
-        images = torch.stack((img1, img2, img3, img4)).view(-1, 3, 32, 32)
-        labels = torch.stack((rot1, rot2, rot3, rot4)).view(-1)
+            images = torch.stack((img1, img2, img3, img4)).view(-1, 3, 32, 32)
+            labels = torch.stack((rot1, rot2, rot3, rot4)).view(-1)
 
-        print(images.shape)
-        break
+            print(images.shape)
+            break
 
         
     

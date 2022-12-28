@@ -4,6 +4,6 @@
         "weight_decay": 0.0001,
         "momentum": 0.9
     },
-    "checkpoint": false,
+    "checkpoint": true,
     "path_to_checkpoint": "checkpoint/test_new.pt"
 }

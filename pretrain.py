@@ -133,7 +133,6 @@ def main():
 
     loss_history = list()
     acc_history = list()
-    best_acc = 0
 
     if config["checkpoint"]:
 
@@ -144,7 +143,6 @@ def main():
         current_epoch = checkpoint["epoch"]
         loss_history = checkpoint["loss"]
         acc_history = checkpoint["acc"]
-        best_acc = max(acc_history)
 
         print(f"Resuming Training from Epoch {current_epoch}, Last Loss {loss_history[-1]}")
 
@@ -155,26 +153,24 @@ def main():
         print(f"Epoch {epoch}")
         avg_epoch_loss = train(model, criterion, optimizer, train_loader, epoch, scaler)
         scheduler.step()
+        loss_history.append(avg_epoch_loss)
 
         eval_acc = eval(model, eval_loader, epoch )
         print(f"Acc on Eval {eval_acc}")
         acc_history.append(eval_acc)
 
-        if eval_acc >= best_acc : 
-            best_acc = best_acc
-
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "scheduler": scheduler.state_dict(),
-                    "loss":loss_history.append(avg_epoch_loss),
-                    "acc" : acc_history
-                },
-                config["path_to_checkpoint"],
-            )
-            config["checkpoint"] = True
+        torch.save(
+            {
+                "epoch": epoch,
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "loss": loss_history,
+                "acc" : acc_history
+            },
+            config["path_to_checkpoint"],
+        )
+        config["checkpoint"] = True
 
         with open(args.config, "w") as out:
             json.dump(config, out, indent=4)

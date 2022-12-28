@@ -10,7 +10,6 @@ import warnings
 import argparse
 import json
 
-from torch.nn.init import kaiming_uniform_, normal_
 from torch.utils.data import DataLoader, Subset
 from torchvision import transforms as T
 
@@ -68,29 +67,21 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 
     model = models.resnet18(num_classes=num_classes)
 
-    fc_weigth = kaiming_uniform_(model.fc.weight.data)
-    fc_bias = normal_(model.fc.bias.data)
+    new_d = dict()
 
-    # Rebuild state_dic from checkpoint with correct keys
-    state_dict = dict()
+    for k, v in model_state.items() : 
+        if k.startswith("resnet") :
+            new_k = k.replace("resnet.","")
+            new_d[new_k] = v
+    
+    model.load_state_dict(new_d, strict=False)
 
-    # prefix to be removed
-    offset_char = "encoder."
+    model.fc = nn.Linear(512, 10)
 
-    state_dict = {
-        k[len(offset_char) :]: model_state[k]
-        for k in model_state.keys()
-        if k[len(offset_char) :] in model.state_dict().keys()
-    }
-    state_dict["fc.weight"] = fc_weigth
-    state_dict["fc.bias"] = fc_bias
-
-    model.load_state_dict(state_dict)
-
-    # Freezing the weigths for all the model except the last one
-    for name, param in model.named_parameters():
-        if name not in ["fc.weight", "fc.bias"]:
-            param.requires_grad = False
+    # # Freezing the weigths for all the model except the last one
+    # for name, param in model.named_parameters():
+    #     if name not in ["fc.weight", "fc.bias"]:
+    #         param.requires_grad = False
 
     return model
 
@@ -110,11 +101,14 @@ def main():
     transforms_train = T.Compose([
         T.ToTensor(),
         T.RandomHorizontalFlip(), 
-        T.RandomApply([T.ColorJitter(.4, .4, .4, .4)], p=.2)
+        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        T.RandomCrop(32, padding=4)
+
     ])
 
     transforms_eval = T.Compose([
-        T.ToTensor()
+        T.ToTensor(),
+            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
     ])
 
     device = "cuda" if torch.cuda.is_available() and args.device == "gpu" else "cpu"
@@ -135,13 +129,6 @@ def main():
         train_data = datasets.CIFAR10(root="data", train=True, download=False, transform=transforms_train)
 
 
-    # loader = DataLoader(
-    #     train_data,
-    #     batch_size=args.batch_size,
-    #     num_workers=args.num_workers,
-    #     shuffle=True,
-    # )
-
     eval_loader = DataLoader(eval_data, batch_size=args.batch_size)
 
     model = load_pretrained_backbone(10)
@@ -149,10 +136,10 @@ def main():
 
     # The optimizer should work only on the non-frozen modules
     parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
-    assert(len(parameters) == 2)
+    
 
     stage2_optimizer = optim.SGD(
-        parameters,
+        model.parameters(),
         config["optimizer"]["lr"],
         weight_decay=config["optimizer"]["weight_decay"],
         momentum=config["optimizer"]["weight_decay"],
@@ -185,11 +172,8 @@ def main():
         # Traning Loop
         for i, (images, labels) in enumerate(loader):
 
-            print(labels.shape)
-
             images = images.to(device)
 
-            labels = nn.functional.one_hot(labels, 10).type(torch.FloatTensor)
             labels = labels.to(device)
 
             preds = model.forward(images)
@@ -204,9 +188,6 @@ def main():
 
             print(f"Epoch {epoch + 1}, {losses}" , end="\r")
 
-        cosine_decay_scheduler(
-            stage2_optimizer, config["optimizer"]["lr"], epoch, args.num_epochs
-        )
         # Eval
         with torch.no_grad():
 
@@ -230,7 +211,7 @@ def main():
 
 
             # Asking the oracle step untill budget is exhausted
-            if not args.base_line_eval and epoch % 1 == 0 and train_data.spent_budget < config["al"]["final_budget"]:
+            if not args.base_line_eval and epoch % 10 == 9 and train_data.spent_budget <= config["al"]["final_budget"]:
 
                 train_data.goto_stage3()
                 loader = DataLoader(train_data, args.batch_size, args.num_workers)
