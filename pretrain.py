@@ -19,7 +19,7 @@ from utils.meters import AverageMeter
 def train(model, criterion, optimizer, loader, epoch, scaler):
     losses = AverageMeter("Loss", ":.4f")
 
-    model.train()
+    model.train() 
 
     for batch in loader:
         
@@ -77,7 +77,7 @@ def eval(model, loader, epoch) :
 
                 acc.update(preds, labels)
     
-    return acc.compute.item()
+    return acc.compute().item()
             
 
 
@@ -133,6 +133,7 @@ def main():
 
     loss_history = list()
     acc_history = list()
+    best_acc = 0
 
     if config["checkpoint"]:
 
@@ -143,11 +144,12 @@ def main():
         current_epoch = checkpoint["epoch"]
         loss_history = checkpoint["loss"]
         acc_history = checkpoint["acc"]
+        best_acc = max(acc_history)
 
         print(f"Resuming Training from Epoch {current_epoch}, Last Loss {loss_history[-1]}")
 
     
- 
+    
 
     for epoch in range(current_epoch, args.num_epochs):
         print(f"Epoch {epoch}")
@@ -158,18 +160,21 @@ def main():
         print(f"Acc on Eval {eval_acc}")
         acc_history.append(eval_acc)
 
-        torch.save(
-            {
-                "epoch": epoch,
-                "model": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
-                "loss":loss_history.append(avg_epoch_loss),
-                "acc" : acc_history
-            },
-            config["path_to_checkpoint"],
-        )
-        config["checkpoint"] = True
+        if eval_acc >= best_acc : 
+            best_acc = best_acc
+
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "loss":loss_history.append(avg_epoch_loss),
+                    "acc" : acc_history
+                },
+                config["path_to_checkpoint"],
+            )
+            config["checkpoint"] = True
 
         with open(args.config, "w") as out:
             json.dump(config, out, indent=4)
