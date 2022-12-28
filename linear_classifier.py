@@ -9,20 +9,12 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.datasets as datasets
 import torchvision.models as models
-
-import numpy as np
-import pandas as pd
-import warnings
-import argparse
-import json
-
 from torch.utils.data import DataLoader, Subset
+from torchmetrics.classification import MulticlassAccuracy
 from torchvision import transforms as T
 
-from utils.meters import AverageMeter
 from datasets.ActiveWrapper import CIFAR10ActiveWrapper
-
-from utils.schedulers import cosine_decay_scheduler
+from utils.meters import AverageMeter
 
 warnings.filterwarnings("ignore")
 
@@ -32,15 +24,21 @@ parser.add_argument(
     "--config",
     help="path to the config file, any command line argument will override the config file",
     type=str,
+    default="lcls.config.py",
 )
 parser.add_argument(
-    "--device", help="Whant device to use", choices=["cpu", "gpu"], type=str
+    "--device",
+    help="Whant device to use",
+    choices=["cpu", "gpu"],
+    type=str,
+    default="gpu",
 )
 
 parser.add_argument(
     "--num_epochs",
     help="Total number of epoch for pretraining path to checkpoint in config file",
     type=int,
+    default=100,
 )
 
 parser.add_argument(
@@ -55,6 +53,13 @@ parser.add_argument(
     help="how many workers to spwan for the dataloader",
     type=int,
     default=1,
+)
+
+parser.add_argument(
+    "--cycle_len",
+    help="How many epochs before querying the oracle",
+    type=int,
+    default=10,
 )
 
 args = parser.parse_args()
@@ -80,13 +85,12 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 
     new_d = dict()
 
-    for k, v in model_state.items() : 
-        if k.startswith("resnet") :
-            new_k = k.replace("resnet.","")
+    for k, v in model_state.items():
+        if k.startswith("resnet"):
+            new_k = k.replace("resnet.", "")
             new_d[new_k] = v
-    
-    model.load_state_dict(new_d, strict=False)
 
+    model.load_state_dict(new_d, strict=False)
 
     model.fc = nn.Linear(512, 10)
 
@@ -101,27 +105,23 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 def entropy_score(preds):
     # preds (bs, 10)
     preds = nn.functional.softmax(preds, dim=1)
-    return - torch.sum(preds * torch.log2(preds), dim=1)
-
-
-def visualize_ds_stats(labels):
-    labels_df = pd.DataFrame(labels.data)
+    return -torch.sum(preds * torch.log2(preds), dim=1)
 
 
 def main():
 
-    transforms_train = T.Compose([
-        T.ToTensor(),
-        T.RandomHorizontalFlip(), 
-        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        T.RandomCrop(32, padding=4)
+    transforms_train = T.Compose(
+        [
+            T.ToTensor(),
+            T.RandomHorizontalFlip(),
+            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            T.RandomCrop(32, padding=4),
+        ]
+    )
 
-    ])
-
-    transforms_eval = T.Compose([
-        T.ToTensor(),
-            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-    ])
+    transforms_eval = T.Compose(
+        [T.ToTensor(), T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]
+    )
 
     device = "cuda" if torch.cuda.is_available() and args.device == "gpu" else "cpu"
     eval_data = datasets.CIFAR10(
@@ -149,7 +149,6 @@ def main():
     model = load_pretrained_backbone(10)
     model = model.to(device)
 
-
     stage2_optimizer = optim.SGD(
         model.parameters(),
         config["optimizer"]["lr"],
@@ -158,9 +157,13 @@ def main():
     )
 
     stage2_criterion = nn.CrossEntropyLoss()
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(
+        optimizer=stage2_optimizer, 
+        gamma=0.5,
+        verbose=True
+    )
 
     acc = MulticlassAccuracy(num_classes=10).to(device)
-    conf = MulticlassConfusionMatrix(num_classes=10, normalize="true").to(device)
 
     # Stage2 Training
     for epoch in range(args.num_epochs):
@@ -169,7 +172,7 @@ def main():
 
         if not args.base_line_eval:
             train_data.goto_stage2()
-            print(train_data.get_label_info())
+            
 
         loader = DataLoader(
             train_data,
@@ -187,7 +190,7 @@ def main():
 
         # Traning Loop
         for i, (images, labels) in enumerate(loader):
-            
+
             stage2_optimizer.zero_grad()
 
             images = images.to(device)
@@ -196,7 +199,6 @@ def main():
 
             preds = model.forward(images)
 
-
             loss = stage2_criterion(preds, labels)
             loss.backward()
             stage2_optimizer.step()
@@ -204,7 +206,11 @@ def main():
             # running_loss += loss.item()
             losses.update(loss.item(), images.size(0))
 
+           
+
             print(f"Epoch {epoch + 1}, {losses}", end="\r")
+        
+        scheduler.step()
 
         # Eval
         with torch.no_grad():
@@ -221,7 +227,6 @@ def main():
                 preds = model.forward(images)
 
                 acc.update(preds, labels)
-                conf.update(preds, labels)
                 total += labels.size(0)
 
                 _, predictions = torch.max(preds.data, 1)
@@ -230,13 +235,12 @@ def main():
             print(
                 f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {acc.compute().item()}%"
             )
-            conf.reset()
             acc.reset()
 
             # Asking the oracle step untill budget is exhausted
             if (
                 not args.base_line_eval
-                and epoch % 10 == 0
+                and epoch % args.cycle_len == args.cycle_len - 1
                 and train_data.spent_budget <= config["al"]["final_budget"]
             ):
 
@@ -260,6 +264,9 @@ def main():
 
                 # Dataset still in stage3 mode
                 train_data.query_oracle(indices[:b_step])
+
+                for g in stage2_optimizer.param_groups:
+                    g['lr'] = config["optimizer"]["lr"]
 
 
 if __name__ == "__main__":
