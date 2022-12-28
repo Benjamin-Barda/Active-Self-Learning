@@ -5,5 +5,5 @@
         "momentum": 0.9
     },
     "checkpoint": false,
-    "path_to_checkpoint": "checkpoint/resnet18_0_sgd_V0.pt"
+    "path_to_checkpoint": "checkpoint/test_new.pt"
 }
