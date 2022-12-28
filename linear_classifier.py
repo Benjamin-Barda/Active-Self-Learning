@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import transforms as T
 
 from utils.meters import AverageMeter
-from ActiveWrapper import CIFAR10ActiveWrapper
+from datasets.ActiveWrapper import CIFAR10ActiveWrapper
 
 from utils.schedulers import cosine_decay_scheduler
 
@@ -184,6 +184,8 @@ def main():
 
         # Traning Loop
         for i, (images, labels) in enumerate(loader):
+
+            print(labels.shape)
 
             images = images.to(device)
 
