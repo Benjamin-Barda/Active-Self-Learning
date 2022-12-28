@@ -1,3 +1,6 @@
+import argparse
+import json
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -30,13 +33,12 @@ def train(model, criterion, optimizer, loader, epoch, scaler):
         img4, rot4 = im4
 
         images = torch.stack((img1, img2, img3, img4)).view(-1, 3, 32, 32)
-        labels = torch.stack((rot1, rot2, rot3, rot4)).view(-1).contiguous()
-
-    
+        labels = torch.stack((rot1, rot2, rot3, rot4)).view(-1).contiguous()  
 
         with torch.autocast(device, dtype=torch.float16):
             images = images.to(device)
             labels = labels.to(device)
+
 
             preds = model.forward(images)
 
@@ -73,6 +75,7 @@ def eval(model, loader, epoch) :
                 images = images.to(device)
                 labels = labels.to(device)
 
+
                 preds = model.forward(images)
 
                 acc.update(preds, labels)
@@ -85,7 +88,6 @@ def main():
 
     with open(args.config, "r") as f:
         config = json.load(f)
-
     transforms = T.Compose(
         [
             # Maybe add some more augmentations ??? Remember not to use any Flip !!
@@ -145,12 +147,11 @@ def main():
         acc_history = checkpoint["acc"]
 
         print(f"Resuming Training from Epoch {current_epoch}, Last Loss {loss_history[-1]}")
-
+   
     
-    
-
     for epoch in range(current_epoch, args.num_epochs):
         print(f"Epoch {epoch}")
+
         avg_epoch_loss = train(model, criterion, optimizer, train_loader, epoch, scaler)
         scheduler.step()
         loss_history.append(avg_epoch_loss)
@@ -210,5 +211,6 @@ if __name__ == "__main__":
 
     device = "cuda" if torch.cuda.is_available() and args.device == "gpu" else "cpu"
     print(f"[ + ] Device set to: {device}")
+
 
     main()

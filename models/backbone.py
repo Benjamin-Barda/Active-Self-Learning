@@ -3,8 +3,8 @@ import torch.nn as nn
 
 from torchvision.models import resnet18
 
-
 class BackboneEncoder(nn.Module) : 
+
   '''
   Rotation Prediction Pretext Task using Resnet Backbone
   '''

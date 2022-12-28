@@ -1,3 +1,9 @@
+import argparse
+import json
+import warnings
+
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -38,20 +44,25 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--base_line_eval", 
-    help="Wether to apply active learning techiques or nor", 
-    type=bool, 
-    default=False
+    "--base_line_eval",
+    help="Wether to apply active learning techiques or nor",
+    type=bool,
+    default=False,
 )
 parser.add_argument("--batch_size", help="Batch size", type=int)
-parser.add_argument("--num_workers", help="how many workers to spwan for the dataloader", type=int, default=1)
+parser.add_argument(
+    "--num_workers",
+    help="how many workers to spwan for the dataloader",
+    type=int,
+    default=1,
+)
 
 args = parser.parse_args()
 
-with open(args.config, "r") as f: 
+with open(args.config, "r") as f:
     config = json.load(f)
 
-if args.base_line_eval : 
+if args.base_line_eval:
     print("[ + ] Baseline evaluation, Using whole dataset, No stage 3")
 
 
@@ -76,6 +87,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
     
     model.load_state_dict(new_d, strict=False)
 
+
     model.fc = nn.Linear(512, 10)
 
     # # Freezing the weigths for all the model except the last one
@@ -89,7 +101,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 def entropy_score(preds):
     # preds (bs, 10)
     preds = nn.functional.softmax(preds, dim=1)
-    return -torch.sum(preds * torch.log2(preds), dim=1)
+    return - torch.sum(preds * torch.log2(preds), dim=1)
 
 
 def visualize_ds_stats(labels):
@@ -116,27 +128,27 @@ def main():
         root="data", train=False, download=True, transform=transforms_eval
     )
 
-
-
     # How many images to add to add to the labeled set evry cycle
-    if not args.base_line_eval: 
+    if not args.base_line_eval:
         cifar10 = datasets.CIFAR10(root="data", train=True, download=False)
         train_data = CIFAR10ActiveWrapper(
-            cifar10, config["al"]["initial_budget"], config["al"]["final_budget"], config["al"]["to_label_each_round"], transform=transforms_train
+            cifar10,
+            config["al"]["initial_budget"],
+            config["al"]["final_budget"],
+            config["al"]["to_label_each_round"],
+            transform=transforms_train,
         )
-        b_step = int( config["al"]["to_label_each_round"] * len(cifar10))
-    else: 
-        train_data = datasets.CIFAR10(root="data", train=True, download=False, transform=transforms_train)
-
+        b_step = int(config["al"]["to_label_each_round"] * len(cifar10))
+    else:
+        train_data = datasets.CIFAR10(
+            root="data", train=True, download=False, transform=transforms_train
+        )
 
     eval_loader = DataLoader(eval_data, batch_size=args.batch_size)
 
     model = load_pretrained_backbone(10)
     model = model.to(device)
 
-    # The optimizer should work only on the non-frozen modules
-    parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
-    
 
     stage2_optimizer = optim.SGD(
         model.parameters(),
@@ -144,8 +156,11 @@ def main():
         weight_decay=config["optimizer"]["weight_decay"],
         momentum=config["optimizer"]["weight_decay"],
     )
-    
+
     stage2_criterion = nn.CrossEntropyLoss()
+
+    acc = MulticlassAccuracy(num_classes=10).to(device)
+    conf = MulticlassConfusionMatrix(num_classes=10, normalize="true").to(device)
 
     # Stage2 Training
     for epoch in range(args.num_epochs):
@@ -154,6 +169,7 @@ def main():
 
         if not args.base_line_eval:
             train_data.goto_stage2()
+            print(train_data.get_label_info())
 
         loader = DataLoader(
             train_data,
@@ -171,6 +187,8 @@ def main():
 
         # Traning Loop
         for i, (images, labels) in enumerate(loader):
+            
+            stage2_optimizer.zero_grad()
 
             images = images.to(device)
 
@@ -178,7 +196,7 @@ def main():
 
             preds = model.forward(images)
 
-            stage2_optimizer.zero_grad()
+
             loss = stage2_criterion(preds, labels)
             loss.backward()
             stage2_optimizer.step()
@@ -186,7 +204,7 @@ def main():
             # running_loss += loss.item()
             losses.update(loss.item(), images.size(0))
 
-            print(f"Epoch {epoch + 1}, {losses}" , end="\r")
+            print(f"Epoch {epoch + 1}, {losses}", end="\r")
 
         # Eval
         with torch.no_grad():
@@ -201,17 +219,26 @@ def main():
                 labels = labels.to(device)
 
                 preds = model.forward(images)
+
+                acc.update(preds, labels)
+                conf.update(preds, labels)
                 total += labels.size(0)
+
                 _, predictions = torch.max(preds.data, 1)
                 correct += (predictions == labels).sum().item()
 
             print(
-                f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {100 * correct // total}%"
-            )            
-
+                f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {acc.compute().item()}%"
+            )
+            conf.reset()
+            acc.reset()
 
             # Asking the oracle step untill budget is exhausted
-            if not args.base_line_eval and epoch % 10 == 9 and train_data.spent_budget <= config["al"]["final_budget"]:
+            if (
+                not args.base_line_eval
+                and epoch % 10 == 0
+                and train_data.spent_budget <= config["al"]["final_budget"]
+            ):
 
                 train_data.goto_stage3()
                 loader = DataLoader(train_data, args.batch_size, args.num_workers)

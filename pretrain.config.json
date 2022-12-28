@@ -1,9 +1,10 @@
 {
     "optimizer": {
-        "lr": 0.05,
-        "weight_decay": 0.0001,
+        "lr": 0.06,
+        "weight_decay": 0.0004,
         "momentum": 0.9
     },
-    "checkpoint": true,
-    "path_to_checkpoint": "checkpoint/test_new.pt"
+
+    "checkpoint": false,
+    "path_to_checkpoint": "checkpoint/nbbtest.pt"
 }
