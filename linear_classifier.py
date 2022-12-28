@@ -9,14 +9,19 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.datasets as datasets
 import torchvision.models as models
-from torch.nn.init import kaiming_uniform_, normal_
-from torch.utils.data import DataLoader
-from torchmetrics.classification import (MulticlassAccuracy,
-                                         MulticlassConfusionMatrix)
+
+import numpy as np
+import pandas as pd
+import warnings
+import argparse
+import json
+
+from torch.utils.data import DataLoader, Subset
 from torchvision import transforms as T
 
-from ActiveWrapper import CIFAR10ActiveWrapper
 from utils.meters import AverageMeter
+from datasets.ActiveWrapper import CIFAR10ActiveWrapper
+
 from utils.schedulers import cosine_decay_scheduler
 
 warnings.filterwarnings("ignore")
@@ -73,30 +78,22 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 
     model = models.resnet18(num_classes=num_classes)
 
-    fc_weigth = kaiming_uniform_(model.fc.weight.data)
-    fc_bias = normal_(model.fc.bias.data)
+    new_d = dict()
 
-    # Rebuild state_dic from checkpoint with correct keys
-    state_dict = dict()
+    for k, v in model_state.items() : 
+        if k.startswith("resnet") :
+            new_k = k.replace("resnet.","")
+            new_d[new_k] = v
+    
+    model.load_state_dict(new_d, strict=False)
 
-    # prefix to be removed
-    offset_char = "encoder."
 
-    state_dict = {
-        k[len(offset_char) :]: model_state[k]
-        for k in model_state.keys()
-        if k[len(offset_char) :] in model.state_dict().keys()
-    }
+    model.fc = nn.Linear(512, 10)
 
-    state_dict["fc.weight"] = fc_weigth
-    state_dict["fc.bias"] = fc_bias
-
-    model.load_state_dict(state_dict)
-
-    # Freezing the weigths for all the model except the last one
-    for name, param in model.named_parameters():
-        if name not in ["fc.weight", "fc.bias"]:
-            param.requires_grad = False
+    # # Freezing the weigths for all the model except the last one
+    # for name, param in model.named_parameters():
+    #     if name not in ["fc.weight", "fc.bias"]:
+    #         param.requires_grad = False
 
     return model
 
@@ -113,23 +110,18 @@ def visualize_ds_stats(labels):
 
 def main():
 
-    transforms_train = T.Compose(
-        [
-            T.ToTensor(),
-            T.RandomResizedCrop(32),
-            T.RandomHorizontalFlip(),
-            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.4)], p=0.2)
-        ]
-    )
+    transforms_train = T.Compose([
+        T.ToTensor(),
+        T.RandomHorizontalFlip(), 
+        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        T.RandomCrop(32, padding=4)
+
+    ])
 
     transforms_eval = T.Compose([
-            T.ToTensor(),
-            T.RandomResizedCrop(32),
-            T.RandomHorizontalFlip(),
-            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.4)], p=0.2)
-        ])
+        T.ToTensor(),
+            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    ])
 
     device = "cuda" if torch.cuda.is_available() and args.device == "gpu" else "cpu"
     eval_data = datasets.CIFAR10(
@@ -152,19 +144,11 @@ def main():
             root="data", train=True, download=False, transform=transforms_train
         )
 
-    # loader = DataLoader(
-    #     train_data,
-    #     batch_size=args.batch_size,
-    #     num_workers=args.num_workers,
-    #     shuffle=True,
-    # )
-
     eval_loader = DataLoader(eval_data, batch_size=args.batch_size)
 
     model = load_pretrained_backbone(10)
     model = model.to(device)
 
-    # The optimizer should work only on the non-frozen modules
 
     stage2_optimizer = optim.SGD(
         model.parameters(),
@@ -207,6 +191,7 @@ def main():
             stage2_optimizer.zero_grad()
 
             images = images.to(device)
+
             labels = labels.to(device)
 
             preds = model.forward(images)

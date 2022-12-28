@@ -4,6 +4,7 @@
         "weight_decay": 0.0004,
         "momentum": 0.9
     },
+
     "checkpoint": false,
     "path_to_checkpoint": "checkpoint/nbbtest.pt"
 }
