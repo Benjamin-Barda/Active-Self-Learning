@@ -140,8 +140,7 @@ def main():
     criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer,
-        milestones=[0.3 * args.num_epochs, 0.6 * args.num_epochs],
-        gamma=0.2,
+        milestones=[30, 60, 90],
         verbose=True,
     )
     scaler = torch.cuda.amp.grad_scaler.GradScaler()

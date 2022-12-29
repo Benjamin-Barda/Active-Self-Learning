@@ -1,6 +1,6 @@
 {
     "optimizer": {
-        "lr": 0.06,
+        "lr": 0.1,
         "weight_decay": 0.0004,
         "momentum": 0.9
     },
