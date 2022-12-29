@@ -11,7 +11,7 @@
         "to_label_each_round" : 0.02
     },
     "path_to_checkpoint" : "checkpoint/rotnet_V2.pt", 
-    "out_path" : "out/run1.txt"
+    "out_path" : "out/run2.txt"
 
 }
 

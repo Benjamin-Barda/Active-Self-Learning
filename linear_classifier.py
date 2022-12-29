@@ -2,14 +2,12 @@ import argparse
 import json
 import warnings
 
-import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.datasets as datasets
 import torchvision.models as models
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 from torchmetrics.classification import MulticlassAccuracy
 from torchvision import transforms as T
 
@@ -38,7 +36,7 @@ parser.add_argument(
     "--num_epochs",
     help="Total number of epoch for pretraining path to checkpoint in config file",
     type=int,
-    default=1000,
+    default=500,
 )
 
 parser.add_argument(
@@ -64,7 +62,7 @@ parser.add_argument(
     "--cycle_len",
     help="How many epochs before querying the oracle",
     type=int,
-    default=100,
+    default=50,
 )
 
 parser.add_argument(
@@ -104,7 +102,12 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 
     model.load_state_dict(new_d, strict=False)
 
-    model.fc = nn.Linear(512, 10, bias=True)
+    model.fc = nn.Sequential(
+        nn.Linear(512, 1024, bias=True),
+        nn.BatchNorm1d(1024), 
+        nn.ReLU(inplace=True), 
+        nn.Linear(1024, 10, bias=True)
+    )
 
     # Freezing the weigths for all the model except the last one
     if args.freeze : 
@@ -118,7 +121,7 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 def entropy_score(preds):
     # preds (bs, 10)
     preds = nn.functional.softmax(preds, dim=1)
-    return -torch.sum(preds * torch.log2(preds), dim=1)
+    return - torch.sum(preds * torch.log2(preds), dim=1)
 
 
 
@@ -128,6 +131,7 @@ def main():
         [
             T.ToTensor(),
             T.RandomHorizontalFlip(),
+            T.RandomApply([T.ColorJitter(.2,.2,.2,.2)]),
             T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
             T.RandomCrop(32, padding=4),
         ]
@@ -182,7 +186,7 @@ def main():
 
     stage2_criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.ExponentialLR(
-        optimizer=stage2_optimizer, gamma=0.9, verbose=True
+        optimizer=stage2_optimizer, gamma=0.8, verbose=False
     )
 
     acc = MulticlassAccuracy(num_classes=10).to(device)

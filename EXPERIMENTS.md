@@ -32,4 +32,18 @@ There are three main approaches to the problem :
 * Pool-Based sampling
 * Membership query synthesis
 
-In this project we investigare Pool-Based sampling. 
+In this project we investigare Pool-Based sampling but a ìn overview of the various methods [this article](https://www.datarobot.com/blog/active-learning-machine-learning/) might be a good starting point.
+
+## Our Approach
+
+Our Approach can be divided in two main steps. 
+
+* Pretrain
+* Active learning loop
+
+### Pretrain
+
+
+
+
+

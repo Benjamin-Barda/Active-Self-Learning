@@ -6,45 +6,47 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.datasets as datasets
 import torchvision.transforms as T
-
-import json
-import argparse
-
 from torch.utils.data import DataLoader
-
 from torchmetrics.classification import MulticlassAccuracy
+from torchvision.models import resnet18
 
-from models.backbone import BackboneEncoder
 from datasets.RotationLoader import RotationDataset
 from utils.meters import AverageMeter
 
 
 def train(model, criterion, optimizer, loader, epoch, scaler):
+
     losses = AverageMeter("Loss", ":.4f")
+    model.train()
 
-    model.train() 
-
-    for batch in loader:
-        
-        im1, im2, im3, im4 = batch
-        img1, rot1 = im1
-        img2, rot2 = im2
-        img3, rot3 = im3
-        img4, rot4 = im4
-
-        images = torch.stack((img1, img2, img3, img4)).view(-1, 3, 32, 32)
-        labels = torch.stack((rot1, rot2, rot3, rot4)).view(-1).contiguous()  
+    for im1, im2, im3, im4, tg1, tg2, tg3, tg4 in loader:
 
         with torch.autocast(device, dtype=torch.float16):
-            images = images.to(device)
-            labels = labels.to(device)
 
+            im1, im2, im3, im4 = (
+                im1.to(device),
+                im2.to(device),
+                im3.to(device),
+                im4.to(device),
+            )
+            tg1, tg2, tg3, tg4 = (
+                tg1.to(device),
+                tg2.to(device),
+                tg3.to(device),
+                tg4.to(device),
+            )
 
-            preds = model.forward(images)
+            pr1, pr2, pr3, pr4 = model(im1), model(im2), model(im3), model(im4)
 
-            loss = criterion(preds, labels)
-        
-        losses.update(loss.item(), images.shape[0])
+            l1 = criterion(pr1, tg1)
+            l2 = criterion(pr2, tg2)
+            l3 = criterion(pr3, tg3)
+            l4 = criterion(pr4, tg4)
+
+            # This is the actual paper implementation. I do not beleive it makes any changes.
+            loss = (l1 + l2 + l3 + l4) / 4
+
+        losses.update(loss.item(), im1.shape[0] * 4)
 
         optimizer.zero_grad()
         scaler.scale(loss).backward()
@@ -54,14 +56,16 @@ def train(model, criterion, optimizer, loader, epoch, scaler):
     print(f"Epoch : {epoch} , {losses}")
     return losses.avg
 
-def eval(model, loader, epoch) : 
+
+def eval(model, loader, epoch):
 
     model.eval()
 
-    acc = MulticlassAccuracy(num_classes = 4).to(device)
+    acc = MulticlassAccuracy(num_classes=4).to(device)
 
     with torch.no_grad():
-        for batch in loader : 
+
+        for batch in loader:
             im1, im2, im3, im4 = batch
             img1, rot1 = im1
             img2, rot2 = im2
@@ -75,13 +79,11 @@ def eval(model, loader, epoch) :
                 images = images.to(device)
                 labels = labels.to(device)
 
-
                 preds = model.forward(images)
 
                 acc.update(preds, labels)
-    
+
     return acc.compute().item()
-            
 
 
 def main():
@@ -90,7 +92,7 @@ def main():
         config = json.load(f)
     train_transforms = T.Compose(
         [
-            # Maybe add some more augmentations ??? 
+            # Maybe add some more augmentations ???
             T.ToTensor(),
             T.RandomHorizontalFlip(),
             T.RandomCrop(32, padding=4),
@@ -99,7 +101,7 @@ def main():
     )
     eval_transforms = T.Compose(
         [
-            # Maybe add some more augmentations ??? 
+            # Maybe add some more augmentations ???
             T.ToTensor(),
             T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ]
@@ -114,15 +116,15 @@ def main():
         num_workers=args.num_workers,
     )
 
-    _eval_data = datasets.CIFAR10(root='data', train=False, download=True)
+    _eval_data = datasets.CIFAR10(root="data", train=False, download=True)
     eval_data = RotationDataset(_eval_data, transforms=eval_transforms)
     eval_loader = DataLoader(
-        eval_data, 
-        batch_size=args.batch_size, 
-        num_workers=args.num_workers
+        eval_data, batch_size=args.batch_size, num_workers=args.num_workers
     )
 
-    model = BackboneEncoder(4).to(device)
+    model = resnet18()
+    out_dim = model.fc.weight.shape[1]
+    model.fc = nn.Linear(out_dim, 4)
 
     optim_config = config["optimizer"]
 
@@ -136,10 +138,12 @@ def main():
 
     current_epoch = 0
     criterion = nn.CrossEntropyLoss()
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, 
-                                                     milestones=[ 0.3 * args.num_epochs , .6 * args.num_epochs],
-                                                     gamma=.2,
-                                                     verbose=True)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer,
+        milestones=[0.3 * args.num_epochs, 0.6 * args.num_epochs],
+        gamma=0.2,
+        verbose=True,
+    )
     scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     loss_history = list()
@@ -155,9 +159,10 @@ def main():
         loss_history = checkpoint["loss"]
         acc_history = checkpoint["acc"]
 
-        print(f"Resuming Training from Epoch {current_epoch}, Last Loss {loss_history[-1]}")
-   
-    
+        print(
+            f"Resuming Training from Epoch {current_epoch}, Last Loss {loss_history[-1]}"
+        )
+
     for epoch in range(current_epoch, args.num_epochs):
         print(f"Epoch {epoch}")
 
@@ -165,7 +170,7 @@ def main():
         scheduler.step()
         loss_history.append(avg_epoch_loss)
 
-        eval_acc = eval(model, eval_loader, epoch )
+        eval_acc = eval(model, eval_loader, epoch)
         print(f"Acc on Eval {eval_acc}")
         acc_history.append(eval_acc)
 
@@ -176,7 +181,7 @@ def main():
                 "optimizer": optimizer.state_dict(),
                 "scheduler": scheduler.state_dict(),
                 "loss": loss_history,
-                "acc" : acc_history
+                "acc": acc_history,
             },
             config["path_to_checkpoint"],
         )
@@ -220,6 +225,5 @@ if __name__ == "__main__":
 
     device = "cuda" if torch.cuda.is_available() and args.device == "gpu" else "cpu"
     print(f"[ + ] Device set to: {device}")
-
 
     main()

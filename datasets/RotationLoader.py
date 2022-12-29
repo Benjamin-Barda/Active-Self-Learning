@@ -26,23 +26,6 @@ class RotationDataset(Dataset):
         self.dataset = dataset
         self.transforms = transforms
     
-    def collate_fn(self, batch) : 
-
-        
-
-        im1, im2, im3, im4 = batch
-        img1, rot1 = im1
-        img2, rot2 = im2
-        img3, rot3 = im3
-        img4, rot4 = im4
-
-        images = torch.stack((img1, img2, img3, img4)).view(-1, 3, 32, 32)
-        labels = torch.stack((rot1, rot2, rot3, rot4)).view(-1)
-
-        return images, labels
-       
-
-        
 
     def __len__(self) -> int:
         return len(self.dataset)
@@ -69,7 +52,10 @@ class RotationDataset(Dataset):
 
         random.shuffle(rotations)
 
-        return (imgs[rotations[0]], rotations[0]),(imgs[rotations[1]], rotations[1]),(imgs[rotations[2]], rotations[2]),(imgs[rotations[3]], rotations[3])
+        # This is how the original paper suggested
+        return imgs[rotations[0]],imgs[rotations[1]],imgs[rotations[2]],imgs[rotations[3]],rotations[0],rotations[1],rotations[2],rotations[3], 
+
+        # return (imgs[rotations[0]], rotations[0]),(imgs[rotations[1]], rotations[1]),(imgs[rotations[2]], rotations[2]),(imgs[rotations[3]], rotations[3])
 
 
 if __name__ == "__main__" : 
