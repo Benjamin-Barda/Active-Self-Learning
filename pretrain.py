@@ -88,9 +88,18 @@ def main():
 
     with open(args.config, "r") as f:
         config = json.load(f)
-    transforms = T.Compose(
+    train_transforms = T.Compose(
         [
-            # Maybe add some more augmentations ??? Remember not to use any Flip !!
+            # Maybe add some more augmentations ??? 
+            T.ToTensor(),
+            T.RandomHorizontalFlip(),
+            T.RandomCrop(32, padding=4),
+            T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ]
+    )
+    eval_transforms = T.Compose(
+        [
+            # Maybe add some more augmentations ??? 
             T.ToTensor(),
             T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ]
@@ -98,7 +107,7 @@ def main():
 
     _train_data = datasets.CIFAR10(root="data", train=True, download=True)
 
-    train_data = RotationDataset(_train_data, transforms=transforms)
+    train_data = RotationDataset(_train_data, transforms=train_transforms)
     train_loader = DataLoader(
         train_data,
         batch_size=args.batch_size,
@@ -106,7 +115,7 @@ def main():
     )
 
     _eval_data = datasets.CIFAR10(root='data', train=False, download=True)
-    eval_data = RotationDataset(_eval_data, transforms=transforms)
+    eval_data = RotationDataset(_eval_data, transforms=eval_transforms)
     eval_loader = DataLoader(
         eval_data, 
         batch_size=args.batch_size, 
@@ -192,7 +201,7 @@ if __name__ == "__main__":
         "--batch_size",
         help="Batch Size : Note it will be x4 on memory",
         type=int,
-        default=12,
+        default=256,
     )
 
     parser.add_argument(
