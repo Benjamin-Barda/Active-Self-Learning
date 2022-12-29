@@ -43,6 +43,18 @@ Our Approach can be divided in two main steps.
 
 ### Pretrain
 
+This is a crucial part of the method proposed, in fact the quality of the features learned during this phase have a great impact on the final performnace, so we put great consideration in selecting the appropiate pretext task. 
+
+The one thing that remained constant during all of our experiments were was the choice of the architechture. We decided to use a Residual Network for two reasons:
+
+1. Low number of learnable parameters
+2. Proved history of great performance on CIFAR10, the dataset we chose for this project.
+
+During the first phase of the project we considered using the non constrastive task described in [SimSiam](https://arxiv.org/abs/2011.10566). Even though the quality of the features were excellent we faced the problem of limited resources in terms of computing and time, and since to have an effective pretrain we would need to run at least 800 epochs we decided to discard this option. 
+
+We then resorted to a simpler task, more specifically rotation prediction, as described in the [RotNet paper](https://arxiv.org/abs/1803.07728). 
+The task is pretty straight forward. Given an unlabeled image, we rotate it by 90, 180 and 270 degreees, associating to each rotation a label (0 for no rotation, 1 for 90deg rotation, ecc). We then train a classifier over the rotated images. The idea is that the network is forced to focus on important features of the image in order to recognize the rotation thus learning usefull features rappresentaions. The big advantage over the SimSiam approach is the realative low number of epochs it needs. In fact around 100 epochs are needed to have an effective pretrain, allowing us to complete the training in a single colab session in less than 2 hours.
+
 
 
 
