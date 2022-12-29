@@ -38,7 +38,7 @@ parser.add_argument(
     "--num_epochs",
     help="Total number of epoch for pretraining path to checkpoint in config file",
     type=int,
-    default=100,
+    default=1000,
 )
 
 parser.add_argument(
@@ -64,7 +64,7 @@ parser.add_argument(
     "--cycle_len",
     help="How many epochs before querying the oracle",
     type=int,
-    default=10,
+    default=100,
 )
 
 parser.add_argument(
@@ -121,6 +121,7 @@ def entropy_score(preds):
     return -torch.sum(preds * torch.log2(preds), dim=1)
 
 
+
 def main():
 
     transforms_train = T.Compose(
@@ -165,23 +166,23 @@ def main():
         model = load_pretrained_backbone(10)
         model = model.to(device)
 
-    # stage2_optimizer = optim.SGD(
-    #     model.parameters(),
-    #     config["optimizer"]["lr"],
-    #     weight_decay=config["optimizer"]["weight_decay"],
-    #     momentum=config["optimizer"]["weight_decay"],
-    # )
-
-    stage2_optimizer = optim.AdamW(
+    stage2_optimizer = optim.SGD(
         model.parameters(),
         config["optimizer"]["lr"],
         weight_decay=config["optimizer"]["weight_decay"],
-        amsgrad=True,
+        momentum=config["optimizer"]["weight_decay"],
     )
+
+    # stage2_optimizer = optim.AdamW(
+    #     model.parameters(),
+    #     config["optimizer"]["lr"],
+    #     weight_decay=config["optimizer"]["weight_decay"],
+    #     amsgrad=True,
+    # )
 
     stage2_criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.ExponentialLR(
-        optimizer=stage2_optimizer, gamma=0.5, verbose=True
+        optimizer=stage2_optimizer, gamma=0.9, verbose=True
     )
 
     acc = MulticlassAccuracy(num_classes=10).to(device)
@@ -231,6 +232,7 @@ def main():
             losses.update(loss.item(), images.size(0))
 
             print(f"Epoch {epoch + 1}, {losses}", end="\r")
+        print("")
 
         loss_history.append(losses.avg)
         scheduler.step()
@@ -294,8 +296,9 @@ def main():
                     g["lr"] = config["optimizer"]["lr"]
 
     with open(config["out_path"], "w") as f:
-        f.writelines(acc_eval_history)
-        f.writelines(loss_history)
+        acc_eval_history = "\n".join(str(a) for a in acc_eval_history)
+        loss_history = "\n".join(str(a) for a in loss_history)
+        f.write("ACC\n" + acc_eval_history + "\nLOSS\n" + loss_history)
 
         f.close()
 
