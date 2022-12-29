@@ -17,7 +17,9 @@ The Core idea of Active Learning is to get more out of the human in the loop.
 
 Clearly is not possible to force someone to annotate faster, but what we can do is make sure that every sample that he labels have as much impact as possible. 
 
-![Active Learning Loop](docs\AL-loop.png)
+<p align="center">
+  <img src="https://github.com/Benjamin-Barda/Active-Self-Learning/blob/main/docs/AL-loop.png" alt="Active Learning Loop"/>
+</p>
 
 The process is relatively simple from an overview perspective. 
 
