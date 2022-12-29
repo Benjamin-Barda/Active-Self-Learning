@@ -66,11 +66,7 @@ def eval(model, loader, epoch):
     with torch.no_grad():
 
         for batch in loader:
-            im1, im2, im3, im4 = batch
-            img1, rot1 = im1
-            img2, rot2 = im2
-            img3, rot3 = im3
-            img4, rot4 = im4
+            img1, img2, img3, img4, rot1, rot2, rot3, rot4 = batch
 
             images = torch.stack((img1, img2, img3, img4)).view(-1, 3, 32, 32)
             labels = torch.stack((rot1, rot2, rot3, rot4)).view(-1).contiguous()
@@ -125,6 +121,7 @@ def main():
     model = resnet18()
     out_dim = model.fc.weight.shape[1]
     model.fc = nn.Linear(out_dim, 4)
+    model.to(device)
 
     optim_config = config["optimizer"]
 
@@ -141,7 +138,7 @@ def main():
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer,
         milestones=[30, 60, 90],
-        verbose=True,
+        verbose=False,
     )
     scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
