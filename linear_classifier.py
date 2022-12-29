@@ -24,7 +24,7 @@ parser.add_argument(
     "--config",
     help="path to the config file, any command line argument will override the config file",
     type=str,
-    default="lcls.config.py",
+    default="lcls.config.json",
 )
 parser.add_argument(
     "--device",
@@ -47,7 +47,12 @@ parser.add_argument(
     type=bool,
     default=False,
 )
-parser.add_argument("--batch_size", help="Batch size", type=int)
+parser.add_argument(
+    "--batch_size", 
+    help="Batch size", 
+    type=int, 
+    default=256
+)
 parser.add_argument(
     "--num_workers",
     help="how many workers to spwan for the dataloader",
@@ -60,6 +65,13 @@ parser.add_argument(
     help="How many epochs before querying the oracle",
     type=int,
     default=10,
+)
+
+parser.add_argument(
+    "--freeze", 
+    help="Whether to freeze the pretrained backbone", 
+    type=bool, 
+    default=False
 )
 
 args = parser.parse_args()
@@ -92,12 +104,13 @@ def load_pretrained_backbone(num_classes: int) -> nn.Module:
 
     model.load_state_dict(new_d, strict=False)
 
-    model.fc = nn.Linear(512, 10)
+    model.fc = nn.Linear(512, 10, bias=True)
 
-    # # Freezing the weigths for all the model except the last one
-    # for name, param in model.named_parameters():
-    #     if name not in ["fc.weight", "fc.bias"]:
-    #         param.requires_grad = False
+    # Freezing the weigths for all the model except the last one
+    if args.freeze : 
+        for name, param in model.named_parameters():
+            if name not in ["fc.weight", "fc.bias"]:
+                param.requires_grad = False
 
     return model
 
@@ -146,24 +159,35 @@ def main():
 
     eval_loader = DataLoader(eval_data, batch_size=args.batch_size)
 
-    model = load_pretrained_backbone(10)
-    model = model.to(device)
+    if args.base_line_eval : 
+        model = models.resnet18()
+    else : 
+        model = load_pretrained_backbone(10)
+        model = model.to(device)
 
-    stage2_optimizer = optim.SGD(
+    # stage2_optimizer = optim.SGD(
+    #     model.parameters(),
+    #     config["optimizer"]["lr"],
+    #     weight_decay=config["optimizer"]["weight_decay"],
+    #     momentum=config["optimizer"]["weight_decay"],
+    # )
+
+    stage2_optimizer = optim.AdamW(
         model.parameters(),
         config["optimizer"]["lr"],
         weight_decay=config["optimizer"]["weight_decay"],
-        momentum=config["optimizer"]["weight_decay"],
+        amsgrad=True,
     )
 
     stage2_criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.ExponentialLR(
-        optimizer=stage2_optimizer, 
-        gamma=0.5,
-        verbose=True
+        optimizer=stage2_optimizer, gamma=0.5, verbose=True
     )
 
     acc = MulticlassAccuracy(num_classes=10).to(device)
+
+    acc_eval_history = list()
+    loss_history = list()
 
     # Stage2 Training
     for epoch in range(args.num_epochs):
@@ -172,7 +196,6 @@ def main():
 
         if not args.base_line_eval:
             train_data.goto_stage2()
-            
 
         loader = DataLoader(
             train_data,
@@ -200,16 +223,16 @@ def main():
             preds = model.forward(images)
 
             loss = stage2_criterion(preds, labels)
+
             loss.backward()
             stage2_optimizer.step()
 
             # running_loss += loss.item()
             losses.update(loss.item(), images.size(0))
 
-           
-
             print(f"Epoch {epoch + 1}, {losses}", end="\r")
-        
+
+        loss_history.append(losses.avg)
         scheduler.step()
 
         # Eval
@@ -235,6 +258,8 @@ def main():
             print(
                 f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {acc.compute().item()}%"
             )
+
+            acc_eval_history.append(acc.compute().item())
             acc.reset()
 
             # Asking the oracle step untill budget is exhausted
@@ -248,6 +273,7 @@ def main():
                 loader = DataLoader(train_data, args.batch_size, args.num_workers)
 
                 history = list()
+
                 # Stage3
                 print(f"Epoch {epoch + 1} : Entering Stage3")
                 for i, (images, _) in enumerate(loader):
@@ -259,14 +285,19 @@ def main():
                     history += score
 
                     print(f"progress: {i / len(loader) :.2f} ", end="\r")
-                print("")
                 _, indices = torch.sort(torch.FloatTensor(history), descending=True)
 
                 # Dataset still in stage3 mode
                 train_data.query_oracle(indices[:b_step])
 
                 for g in stage2_optimizer.param_groups:
-                    g['lr'] = config["optimizer"]["lr"]
+                    g["lr"] = config["optimizer"]["lr"]
+
+    with open(config["out_path"], "w") as f:
+        f.writelines(acc_eval_history)
+        f.writelines(loss_history)
+
+        f.close()
 
 
 if __name__ == "__main__":
