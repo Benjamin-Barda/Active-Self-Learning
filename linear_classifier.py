@@ -11,10 +11,12 @@ from torch.utils.data import DataLoader
 from torchmetrics.classification import MulticlassAccuracy
 from torchvision import transforms as T
 
-from datasets.ActiveWrapper import CIFAR10ActiveWrapper
+from dataset.ActiveWrapper import CIFAR10ActiveWrapper
 from utils.meters import AverageMeter
 
 warnings.filterwarnings("ignore")
+
+torch.backends.cudnn.benchmark = True
 
 parser = argparse.ArgumentParser()
 
@@ -45,12 +47,7 @@ parser.add_argument(
     type=bool,
     default=False,
 )
-parser.add_argument(
-    "--batch_size", 
-    help="Batch size", 
-    type=int, 
-    default=256
-)
+parser.add_argument("--batch_size", help="Batch size", type=int, default=256)
 parser.add_argument(
     "--num_workers",
     help="how many workers to spwan for the dataloader",
@@ -66,10 +63,10 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--freeze", 
-    help="Whether to freeze the pretrained backbone", 
-    type=bool, 
-    default=False
+    "--freeze",
+    help="Whether to freeze the pretrained backbone",
+    type=bool,
+    default=False,
 )
 
 args = parser.parse_args()
@@ -81,38 +78,35 @@ if args.base_line_eval:
     print("[ + ] Baseline evaluation, Using whole dataset, No stage 3")
 
 
-def load_pretrained_backbone(num_classes: int) -> nn.Module:
+def load_pretrained_backbone(num_classes: int, get_pretext_losses : bool = False) -> nn.Module:
     """
     Load the resnet backbone with just a linear layer at the end.
     Freeze all the weights excpet for the last layer.
     load from checkpoint.
     """
 
-    checkpoint = torch.load(config["path_to_checkpoint"])
-    model_state = checkpoint["model"]
+
+
+    checkpoint = torch.load(config["path_to_checkpoint"], map_location='cpu')
+    model_state = checkpoint["state_dict"]
 
     model = models.resnet18(num_classes=num_classes)
 
     new_d = dict()
 
     for k, v in model_state.items():
-        if k.startswith("resnet"):
-            new_k = k.replace("resnet.", "")
+        if k.startswith("backbone"):
+            new_k = k.replace("backbone.", "")
             new_d[new_k] = v
 
     model.load_state_dict(new_d, strict=False)
 
-    model.fc = nn.Sequential(
-        nn.Linear(512, 1024, bias=True),
-        nn.BatchNorm1d(1024), 
-        nn.ReLU(inplace=True), 
-        nn.Linear(1024, 10, bias=True)
-    )
+    model.fc = nn.Linear(512, num_classes)
 
     # Freezing the weigths for all the model except the last one
-    if args.freeze : 
+    if args.freeze:
         for name, param in model.named_parameters():
-            if name not in ["fc.weight", "fc.bias"]:
+            if name not in ["fc.weight", "fc.bias"] :
                 param.requires_grad = False
 
     return model
@@ -123,6 +117,9 @@ def entropy_score(preds):
     preds = nn.functional.softmax(preds, dim=1)
     return - torch.sum(preds * torch.log2(preds), dim=1)
 
+def min_margin(preds): 
+    preds = torch.sort(preds, dim=1)
+
 
 
 def main():
@@ -131,7 +128,6 @@ def main():
         [
             T.ToTensor(),
             T.RandomHorizontalFlip(),
-            T.RandomApply([T.ColorJitter(.2,.2,.2,.2)]),
             T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
             T.RandomCrop(32, padding=4),
         ]
@@ -164,9 +160,9 @@ def main():
 
     eval_loader = DataLoader(eval_data, batch_size=args.batch_size)
 
-    if args.base_line_eval : 
+    if args.base_line_eval:
         model = models.resnet18()
-    else : 
+    else:
         model = load_pretrained_backbone(10)
         model = model.to(device)
 
@@ -184,15 +180,47 @@ def main():
     #     amsgrad=True,
     # )
 
-    stage2_criterion = nn.CrossEntropyLoss()
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(
-        optimizer=stage2_optimizer, gamma=0.8, verbose=False
+    criterion = nn.CrossEntropyLoss()
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        stage2_optimizer,
+        milestones=[
+            # Every cycle we reduce the learning rate when at the half way point
+            x
+            for x in range(args.cycle_len // 2, args.num_epochs, args.cycle_len)
+        ],
     )
 
     acc = MulticlassAccuracy(num_classes=10).to(device)
 
+    # Tracker for results
     acc_eval_history = list()
-    loss_history = list()
+    train_loss_history = list()
+    eval_loss_history = list()
+
+    if not args.base_line_eval :
+        
+
+        first_batch_losses = list()
+        cf = datasets.CIFAR10(root="data", train=True, transform=transforms_eval)  
+        loader = DataLoader(cf, batch_size=500, shuffle=False)
+        initial_sample_size = config["al"]["initial_budget"] * len(cifar10)
+
+        model.eval() 
+
+        for img, _ in loader : 
+        
+            img = img.to(device)
+
+            preds = model(img)
+
+            first_batch_losses += entropy_score(preds.cpu()).tolist()
+        
+        _, indices = torch.sort(torch.FloatTensor(first_batch_losses), descending=True)
+
+        train_data.goto_stage3()
+        train_data.query_oracle(indices[:int(initial_sample_size)])
+        
+
 
     # Stage2 Training
     for epoch in range(args.num_epochs):
@@ -222,14 +250,14 @@ def main():
             stage2_optimizer.zero_grad()
 
             images = images.to(device)
-
             labels = labels.to(device)
-
             preds = model.forward(images)
 
-            loss = stage2_criterion(preds, labels)
-
+            loss = criterion(preds, labels)
             loss.backward()
+
+            # Clipping Gradients.
+            torch.nn.utils.clip_grad.clip_grad_norm_(model.parameters(), 2)
             stage2_optimizer.step()
 
             # running_loss += loss.item()
@@ -238,8 +266,9 @@ def main():
             print(f"Epoch {epoch + 1}, {losses}", end="\r")
         print("")
 
-        loss_history.append(losses.avg)
+        train_loss_history.append(losses.avg)
         scheduler.step()
+        losses.reset()
 
         # Eval
         with torch.no_grad():
@@ -255,6 +284,9 @@ def main():
 
                 preds = model.forward(images)
 
+                loss = criterion(preds, labels)
+                losses.update(loss.item(), images.size(0))
+
                 acc.update(preds, labels)
                 total += labels.size(0)
 
@@ -266,6 +298,7 @@ def main():
             )
 
             acc_eval_history.append(acc.compute().item())
+            eval_loss_history.append(losses.avg)
             acc.reset()
 
             # Asking the oracle step untill budget is exhausted
@@ -280,7 +313,7 @@ def main():
 
                 history = list()
 
-                # Stage3
+                # Stage3 - Acquisition function and query stage
                 print(f"Epoch {epoch + 1} : Entering Stage3")
                 for i, (images, _) in enumerate(loader):
 
@@ -291,18 +324,43 @@ def main():
                     history += score
 
                     print(f"progress: {i / len(loader) :.2f} ", end="\r")
+
+                # Sort Based on Entropy Score
                 _, indices = torch.sort(torch.FloatTensor(history), descending=True)
 
                 # Dataset still in stage3 mode
                 train_data.query_oracle(indices[:b_step])
 
-                for g in stage2_optimizer.param_groups:
-                    g["lr"] = config["optimizer"]["lr"]
+                # Restore original learing rate
+                stage2_optimizer = optim.SGD(
+                    model.parameters(),
+                    config["optimizer"]["lr"],
+                    weight_decay=config["optimizer"]["weight_decay"],
+                    momentum=config["optimizer"]["weight_decay"],
+                )
 
+    # Saving stats in simple txt file
+    # To load themrun the following snippets
+    """
+    with open("out/run2.txt", "r") as f: 
+    flag = True
+    for line in f.readlines(): 
+        if line.startswith("ACC"): 
+            continue
+        if line.startswith("LOSS"):
+            flag = False
+            continue
+        
+        if flag : 
+            acc.append(float(line))
+        else: 
+            loss.append(float(line))
+            
+    """
     with open(config["out_path"], "w") as f:
         acc_eval_history = "\n".join(str(a) for a in acc_eval_history)
-        loss_history = "\n".join(str(a) for a in loss_history)
-        f.write("ACC\n" + acc_eval_history + "\nLOSS\n" + loss_history)
+        train_loss_history = "\n".join(str(a) for a in train_loss_history)
+        f.write("ACC\n" + acc_eval_history + "\nLOSS\n" + train_loss_history)
 
         f.close()
 
