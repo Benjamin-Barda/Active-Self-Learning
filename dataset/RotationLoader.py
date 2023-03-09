@@ -16,7 +16,7 @@ class RotationDataset(Dataset):
     Currently support only CIFAR10
     """
 
-    def __init__(self, dataset, transforms=None) -> None:
+    def __init__(self, dataset, transforms=None, is_train : bool = False) -> None:
 
         if not isinstance(dataset, datasets.CIFAR10):
             raise TypeError(
@@ -25,6 +25,8 @@ class RotationDataset(Dataset):
 
         self.dataset = dataset
         self.transforms = transforms
+
+        self.is_train = is_train
     
 
     def __len__(self) -> int:
@@ -52,8 +54,9 @@ class RotationDataset(Dataset):
 
         random.shuffle(rotations)
 
-        # This is how the original paper suggested
-        return imgs[rotations[0]],imgs[rotations[1]],imgs[rotations[2]],imgs[rotations[3]],rotations[0],rotations[1],rotations[2],rotations[3], 
+        if not self.is_train : 
+            # This is how the original paper suggested
+            return imgs[rotations[0]],imgs[rotations[1]],imgs[rotations[2]],imgs[rotations[3]],rotations[0],rotations[1],rotations[2],rotations[3], 
 
         # return (imgs[rotations[0]], rotations[0]),(imgs[rotations[1]], rotations[1]),(imgs[rotations[2]], rotations[2]),(imgs[rotations[3]], rotations[3])
 

@@ -1,6 +1,6 @@
 {
     "optimizer": {
-        "lr": 0.1,
+        "lr": 0.01,
         "weight_decay": 0.0004,
         "momentum": 0.9
     },
@@ -10,8 +10,8 @@
         "final_budget"   : 0.2, 
         "to_label_each_round" : 0.02
     },
-    "path_to_checkpoint" : "checkpoint/rotnet_V2.pt", 
-    "out_path" : "out/run2.txt"
+    "path_to_checkpoint" : "checkpoint/checkpoint_0100.pth.tar", 
+    "out_path" : "out/run3.txt"
 
 }
 

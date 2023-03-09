@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torchmetrics.classification import MulticlassAccuracy
 from torchvision.models import resnet18
 
-from datasets.RotationLoader import RotationDataset
+from dataset.RotationLoader import RotationDataset
 from utils.meters import AverageMeter
 
 
@@ -137,7 +137,7 @@ def main():
     criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer,
-        milestones=[30, 60, 90],
+        milestones=[20, 50, 70, 90],
         verbose=False,
     )
     scaler = torch.cuda.amp.grad_scaler.GradScaler()

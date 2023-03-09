@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.datasets as datasets
 from torch.utils.data import Dataset, Subset, IterableDataset, DataLoader
@@ -50,9 +51,6 @@ class CIFAR10ActiveWrapper(Dataset):
         self.dataset = dataset
         self.current_stage = initial_stage
 
-        # First assumption is that all of the data is unlabeled thus belongs to stage3 data
-        index_map = {k: 3 for k in range(len(dataset))}
-
         # TODO Change them to numpy array
         self.stage2_indexes = list()
         self.stage3_indexes = list()
@@ -72,15 +70,8 @@ class CIFAR10ActiveWrapper(Dataset):
         if seed is not None : 
             random.seed(seed)
         # Build first set of indices based on the intial Budget
-        while len(self.stage2_indexes) != int(len(dataset) * initial_budget):
-            idx = random.randint(0, len(dataset) - 1)
 
-            if index_map[idx] == 3:
-                index_map[idx] = 2
-                self.stage2_indexes.append(idx)
-        self.stage3_indexes = [x for x in index_map if index_map[x] == 3]
-        self.stage3_indexes.sort()
-        self.stage2_indexes.sort()
+        self.stage3_indexes = [x for x in range(len(self.dataset))]
         assert len(self.stage2_indexes) + len(self.stage3_indexes) == len(dataset)
 
         self.stage2_transform = transform
@@ -114,6 +105,27 @@ class CIFAR10ActiveWrapper(Dataset):
         self.stage3_indexes.sort()
 
         self.spent_budget += len(indices) / len(self.dataset)
+    
+    def _sample_init(self, RotNet : nn.Module) : 
+
+        RotNet.eval()
+        
+        # TODO: Remove hardcode cuda
+        RotNet.to("cuda")
+
+
+        _loader = DataLoader(self.dataset, 500, shuffle=False)
+        
+        _losses = list()
+
+        for img, _ in _loader : 
+            img.to("cuda")
+            preds = RotNet(img)
+            _losses.append(F.cross_entropy(preds, reduction="mean").tolist())
+
+
+
+
 
     def __len__(self):
         if self.current_stage == self.STAGE2:
