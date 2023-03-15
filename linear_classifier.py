@@ -5,11 +5,14 @@ import warnings
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
 import torchvision.datasets as datasets
 import torchvision.models as models
-from torch.utils.data import DataLoader
-from torchmetrics.classification import MulticlassAccuracy
 from torchvision import transforms as T
+
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchmetrics.classification import MulticlassAccuracy
 
 from dataset.ActiveWrapper import CIFAR10ActiveWrapper
 from utils.meters import AverageMeter
@@ -95,7 +98,7 @@ def load_pretrained_backbone(num_classes: int, get_pretext_losses : bool = False
     new_d = dict()
 
     for k, v in model_state.items():
-        if k.startswith("backbone"):
+        if k.startswith("backbone."):
             new_k = k.replace("backbone.", "")
             new_d[new_k] = v
 
@@ -108,7 +111,7 @@ def load_pretrained_backbone(num_classes: int, get_pretext_losses : bool = False
         for name, param in model.named_parameters():
             if name not in ["fc.weight", "fc.bias"] :
                 param.requires_grad = False
-
+            
     return model
 
 
@@ -124,12 +127,16 @@ def min_margin(preds):
 
 def main():
 
+    writer = SummaryWriter()
+
     transforms_train = T.Compose(
         [
             T.ToTensor(),
             T.RandomHorizontalFlip(),
             T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
             T.RandomCrop(32, padding=4),
+            T.GaussianBlur((3)), 
+            T.ColorJitter(.1, .1, .1, .1)
         ]
     )
 
@@ -162,6 +169,7 @@ def main():
 
     if args.base_line_eval:
         model = models.resnet18()
+        model = model.to(device)
     else:
         model = load_pretrained_backbone(10)
         model = model.to(device)
@@ -170,7 +178,8 @@ def main():
         model.parameters(),
         config["optimizer"]["lr"],
         weight_decay=config["optimizer"]["weight_decay"],
-        momentum=config["optimizer"]["weight_decay"],
+        nesterov=True, 
+        momentum=config ['optimizer']['momentum']
     )
 
     # stage2_optimizer = optim.AdamW(
@@ -181,21 +190,15 @@ def main():
     # )
 
     criterion = nn.CrossEntropyLoss()
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         stage2_optimizer,
-        milestones=[
-            # Every cycle we reduce the learning rate when at the half way point
-            x
-            for x in range(args.cycle_len // 2, args.num_epochs, args.cycle_len)
-        ],
+        T_max=args.num_epochs
     )
+
 
     acc = MulticlassAccuracy(num_classes=10).to(device)
 
     # Tracker for results
-    acc_eval_history = list()
-    train_loss_history = list()
-    eval_loss_history = list()
 
     if not args.base_line_eval :
         
@@ -210,7 +213,7 @@ def main():
         for img, _ in loader : 
         
             img = img.to(device)
-
+        
             preds = model(img)
 
             first_batch_losses += entropy_score(preds.cpu()).tolist()
@@ -240,7 +243,8 @@ def main():
         if not args.base_line_eval:
             print("\n")
             print(f"Current budget spent: {(train_data.spent_budget * 100):.2f}% ")
-            print(f"Labelled: {len(train_data)}")
+            writer.add_scalar("Labelled", (train_data.spent_budget * 100), epoch )
+            print(f"Labelled: {len(train_data) }")
 
         losses = AverageMeter("Loss", ":.5f")
 
@@ -256,17 +260,14 @@ def main():
             loss = criterion(preds, labels)
             loss.backward()
 
-            # Clipping Gradients.
-            torch.nn.utils.clip_grad.clip_grad_norm_(model.parameters(), 2)
             stage2_optimizer.step()
 
             # running_loss += loss.item()
             losses.update(loss.item(), images.size(0))
 
             print(f"Epoch {epoch + 1}, {losses}", end="\r")
-        print("")
 
-        train_loss_history.append(losses.avg)
+        writer.add_scalar("Loss/Train", losses.avg, epoch)
         scheduler.step()
         losses.reset()
 
@@ -296,9 +297,8 @@ def main():
             print(
                 f"\nEpoch {epoch + 1} : Stage2 Finished, Eval Acc: {acc.compute().item()}%"
             )
-
-            acc_eval_history.append(acc.compute().item())
-            eval_loss_history.append(losses.avg)
+            writer.add_scalar("Loss/Eval", losses.avg, epoch)
+            writer.add_scalar("Accuracy/Eval", acc.compute().item(), epoch)
             acc.reset()
 
             # Asking the oracle step untill budget is exhausted
@@ -331,39 +331,8 @@ def main():
                 # Dataset still in stage3 mode
                 train_data.query_oracle(indices[:b_step])
 
-                # Restore original learing rate
-                stage2_optimizer = optim.SGD(
-                    model.parameters(),
-                    config["optimizer"]["lr"],
-                    weight_decay=config["optimizer"]["weight_decay"],
-                    momentum=config["optimizer"]["weight_decay"],
-                )
-
-    # Saving stats in simple txt file
-    # To load themrun the following snippets
-    """
-    with open("out/run2.txt", "r") as f: 
-    flag = True
-    for line in f.readlines(): 
-        if line.startswith("ACC"): 
-            continue
-        if line.startswith("LOSS"):
-            flag = False
-            continue
-        
-        if flag : 
-            acc.append(float(line))
-        else: 
-            loss.append(float(line))
-            
-    """
-    with open(config["out_path"], "w") as f:
-        acc_eval_history = "\n".join(str(a) for a in acc_eval_history)
-        train_loss_history = "\n".join(str(a) for a in train_loss_history)
-        f.write("ACC\n" + acc_eval_history + "\nLOSS\n" + train_loss_history)
-
-        f.close()
-
+                
+    writer.close()
 
 if __name__ == "__main__":
     main()
