@@ -153,6 +153,8 @@ So the model to train now is the previous ResNet18 with a Logistic Regression mo
 ready to be fine-tuned on the new task with the help of the active learning method.
 We started with 20\% of the training set and linearly added the sample selected by the model every 50 epochs, until 50\% of the training set size was reached. The model requested the new labelled samples
 using \hyperref[sec:entropy]{Entropy} as Acquisition function. Notice, on the plots, the sudden "jumps" of loss and accuracy values at the instants new samples were added.
+We reached a final accuracy of 0.85 which is an outstanding result, considering that the model has to choose among 10 classes!
+A random guesser would have a probability of 10\% to classify the point correctly, hence we are really satisfied with our result of 85\% of accuracy on the CIFAR10 image classification task.
 \begin{figure}[h]
     \centering
     \includegraphics[scale=1.25]{lcsl_500_20_50_loss}
