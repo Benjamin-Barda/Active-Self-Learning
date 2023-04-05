@@ -1,5 +1,5 @@
 # Fdb version 3
-["pdflatex"] 1680692208 "c:/Users/devin/Desktop/Università/DeepLearning/Project/test.tex" "test.pdf" "test" 1680692210
+["pdflatex"] 1680692387 "c:/Users/devin/Desktop/Università/DeepLearning/Project/test.tex" "test.pdf" "test" 1680692389
   "C:/Program Files/MiKTeX/fonts/tfm/jknappen/ec/tcrm1000.tfm" 993062508 1436 c7f957a372ef2fbe93c0982f96625e12 ""
   "C:/Program Files/MiKTeX/fonts/tfm/public/cm/cmbx12.tfm" 1136768653 1324 c910af8c371558dc20f2d7822f66fe64 ""
   "C:/Program Files/MiKTeX/fonts/tfm/public/cm/cmmi12.tfm" 1136768653 1524 4414a8315f39513458b80dfc63bff03a ""
@@ -73,7 +73,7 @@
   "C:/Users/devin/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map" 1656867487 80909 eab91d9745dd2edfd62a31d53cd5fe15 ""
   "C:/Users/devin/AppData/Local/MiKTeX/fonts/pk/ljfour/jknappen/ec/dpi600/tcrm1000.pk" 1656868478 11548 440433d61cd77a4b01aedfef4c5c1977 ""
   "C:/Users/devin/AppData/Local/MiKTeX/miktex/data/le/pdftex/pdflatex.fmt" 1656867490 10316885 bf6526c5608e614f1cf8746ea2a902ed ""
-  "c:/Users/devin/Desktop/Università/DeepLearning/Project/test.tex" 1680692207 9542 26fa0db50a9a2f953bfe60639fea53bb ""
+  "c:/Users/devin/Desktop/Università/DeepLearning/Project/test.tex" 1680692386 9548 cd4dfb24e452261a7c941a6024e8d99f ""
   "img//AL-loop.png" 1678125602 25688 47d980bb1250784c9e9b83df0a37b7cf ""
   "img//lcsl_500_20_50_acc.png" 1680611244 29338 efc4c3e635ac4a68071bfaccde66fca2 ""
   "img//lcsl_500_20_50_loss.png" 1680629669 19760 daab4fa8fc5452ca5ab28434916625f2 ""
@@ -81,9 +81,9 @@
   "img//pretrain_loss.png" 1680527216 17741 c27618a2fddcd83cf07da49dab27fdbf ""
   "img//resnet18.png" 1680527802 40583 bf206c95f7c2cb90589b07b7e4123781 ""
   "img//rotations.jpg" 1678555079 207676 4c87530d19d180650b2d81941dee52e2 ""
-  "test.aux" 1680692209 2594 e21624b75d885a2495b6e2f49b646aed "pdflatex"
-  "test.out" 1680692209 1497 80354bf2325bd8e1b2c6a60faf11ebb1 "pdflatex"
-  "test.tex" 1680692207 9542 26fa0db50a9a2f953bfe60639fea53bb ""
+  "test.aux" 1680692389 2594 e21624b75d885a2495b6e2f49b646aed "pdflatex"
+  "test.out" 1680692389 1497 80354bf2325bd8e1b2c6a60faf11ebb1 "pdflatex"
+  "test.tex" 1680692386 9548 cd4dfb24e452261a7c941a6024e8d99f ""
   (generated)
   "test.aux"
   "test.log"
