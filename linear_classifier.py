@@ -69,7 +69,7 @@ parser.add_argument(
     "--freeze",
     help="Whether to freeze the pretrained backbone",
     type=bool,
-    default=False,
+    default=True,
 )
 
 args = parser.parse_args()
@@ -88,10 +88,8 @@ def load_pretrained_backbone(num_classes: int, get_pretext_losses : bool = False
     load from checkpoint.
     """
 
-
-
     checkpoint = torch.load(config["path_to_checkpoint"], map_location='cpu')
-    model_state = checkpoint["state_dict"]
+    model_state = checkpoint["model"]
 
     model = models.resnet18(num_classes=num_classes)
 
